@@ -136,6 +136,14 @@ kbd{font-family:var(--display);font-weight:700;background:rgba(255,255,255,.1);b
 #toastBox div{background:rgba(10,13,19,.92);border:1px solid var(--line);padding:8px 14px;border-radius:8px;font-size:14px}
 .swatch{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:middle;margin-right:6px}
 #lobbyList div{padding:4px 0;font-size:14px}
+#kc{position:absolute;inset:0;pointer-events:none}
+#hud.kcmode #topbar,#hud.kcmode #bl,#hud.kcmode #br,#hud.kcmode #minimap,#hud.kcmode #killfeed,#hud.kcmode #center,#hud.kcmode #codetag,#hud.kcmode #net,#hud.kcmode #vignette,#hud.kcmode #death{display:none}
+#kc:before,#kc:after{content:"";position:absolute;left:0;right:0;height:9vh;background:#000}
+#kc:before{top:0}#kc:after{bottom:0}
+#kc .kt{position:absolute;top:calc(9vh + 14px);left:50%;transform:translateX(-50%);font-size:30px;font-weight:700;letter-spacing:.3em;color:#ff4b4b;animation:pop .25s ease-out}
+#kc .kn{position:absolute;top:calc(9vh + 54px);left:50%;transform:translateX(-50%);font-size:18px;letter-spacing:.08em;white-space:nowrap}
+#kc .kn i{font-style:normal;color:#c9d2de;font-size:14px;margin:0 6px}
+#kc .ks2{position:absolute;bottom:calc(9vh + 16px);left:50%;transform:translateX(-50%);font-size:14px;letter-spacing:.14em;color:#dfe6ef;background:rgba(0,0,0,.5);padding:6px 14px;border-radius:8px}
 .look{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @media (max-width:640px){.look{grid-template-columns:1fr}}
 .prev{display:block;background:#4a6a3a linear-gradient(#7fa3c7,#9fc0dc 50%,#5f8a46 50%);border-radius:8px;border:1px solid var(--line);margin:6px 0 4px}
@@ -179,6 +187,7 @@ input[type=color]{width:38px;height:28px;border:1px solid var(--line);border-rad
     <div id="streaks"></div>
     <div id="streakpips"></div>
   </div>
+  <div id="kc" hidden><div class="kt">KILLCAM</div><div class="kn"></div><div class="ks2">SPACE TO SKIP</div></div>
   <div id="board" hidden></div>
   <div id="click" hidden>Click to play</div>
 </div>
@@ -319,7 +328,7 @@ function lsSet(k, v) { try { localStorage.setItem('fragtown.' + k, JSON.stringif
 
 const DEFAULT_XH = { style: 'cross', color: '#ffffff', size: 9, thick: 2, gap: 4, outline: true, dynamic: true };
 const DEFAULT_RET = { reddot: { s: 'dot', c: '#ff3b3b' }, holo: { s: 'circledot', c: '#ff3b3b' }, acog: { s: 'chevron', c: '#ff3b3b' }, sniper: { s: 'cross', c: '#111111' } };
-const SET = Object.assign({ name: '', sens: 3, adsSens: 0.85, fov: 95, vol: 0.7, shadows: true, scale: 1, fps: false, cls: 'assault', bots: 0, botDiff: 'normal', vmSize: 1, vmPos: 'normal' }, lsGet('settings', {}));
+const SET = Object.assign({ name: '', sens: 3, adsSens: 0.85, fov: 95, vol: 0.7, shadows: true, scale: 1, fps: false, cls: 'assault', killcam: true, bots: 0, botDiff: 'normal', vmSize: 1, vmPos: 'normal' }, lsGet('settings', {}));
 SET.xh = Object.assign({}, DEFAULT_XH, SET.xh || {});
 SET.ret = Object.assign({}, DEFAULT_RET, SET.ret || {}); for (const k in DEFAULT_RET) SET.ret[k] = Object.assign({}, DEFAULT_RET[k], SET.ret[k] || {});
 function saveSettings() { lsSet('settings', SET); }
@@ -1334,7 +1343,7 @@ function shoot() {
   }
   const hl = []; for (const [tid, h] of hits) { hl.push([tid, Math.round(h.d), h.head ? 1 : 0]); }
   if (hl.length) { SFX.hit(hl.some(h => h[2])); hitmarker(false); }
-  toHost({ t: 'sh', w: id, o: [r2(_mz.x), r2(_mz.y), r2(_mz.z)], e: ends, h: hl });
+  toHost({ t: 'sh', w: id, o: [r2(_mz.x), r2(_mz.y), r2(_mz.z)], e: ends, h: hl }); recEvent({ k: 'sh', i: MY.id, w: id, o: [_mz.x, _mz.y, _mz.z], e: ends });
   SFX.shot(id, null); afterShot(s, w);
 }
 function afterShot(s, w) {
@@ -1351,7 +1360,7 @@ function hitMannequin(m, d) {
 }
 function melee() {
   if (LP.meleeT > 0 || !LP.alive) return;
-  LP.meleeT = 0.5; LP.meleeHit = false; LP.reloading = false; LP.adsT = 0; LP.firedSinceSpawn = true; SFX.swing(); VM.melee();
+  LP.meleeT = 0.5; LP.meleeHit = false; LP.reloading = false; LP.adsT = 0; LP.firedSinceSpawn = true; SFX.swing(); VM.melee(); recEvent({ k: 'sh', i: MY.id, w: 'knife', o: [0, 0, 0], e: [] });
 }
 function meleeCheck() {
   camera.updateMatrixWorld(); _fw.set(0, 0, -1).applyQuaternion(camera.quaternion);
@@ -1407,7 +1416,7 @@ const PROJ = new Map(); let projSeq = (Math.random() * 1e6) | 0; // random start
 function fireProjectile(id, w) {
   coneDir(_dir, _fw, spreadDeg() * DEG * (w.proj === 'bolt' ? 0.5 : 1));
   const m = { t: 'pj', id: MY.id + ':p' + (++projSeq), k: w.proj, o: MY.id, p: [r2(_mz.x), r2(_mz.y), r2(_mz.z)], v: [r2(_dir.x * w.speed), r2(_dir.y * w.speed), r2(_dir.z * w.speed)] };
-  spawnProj(m, true); toHost(m); SFX.shot(id, null);
+  spawnProj(m, true); toHost(m); SFX.shot(id, null); recEvent({ k: 'sh', i: MY.id, w: id, o: m.p, e: [] });
 }
 const PMAT = { bolt: new THREE.MeshLambertMaterial({ color: 0x3a3226 }), rocket: new THREE.MeshLambertMaterial({ color: 0x6b7b48 }), fl: new THREE.MeshBasicMaterial({ color: 0xffb040 }) };
 function spawnProj(m, local) {
@@ -1717,7 +1726,8 @@ function hostKill(T, A, w, head) {
     }
   } else if (MATCH.mode === 'gun') T.gg = Math.max(0, T.gg - 1);
   const gg = MATCH.mode === 'gun' ? { [T.id]: T.gg } : null; if (gg && A) gg[A.id] = A.gg;
-  bcast({ t: 'kill', k: suicide ? T.id : A.id, v: T.id, w, hd: head ? 1 : 0, ks: suicide ? 0 : A.streak, gg });
+  const fin = MATCH.state === 'live' && !suicide && ((MATCH.mode === 'ffa' && A.k >= MATCH.limit) || (MATCH.mode === 'gun' && A.gg >= GUN_LADDER.length));
+  bcast({ t: 'kill', k: suicide ? T.id : A.id, v: T.id, w, hd: head ? 1 : 0, ks: suicide ? 0 : A.streak, gg, fin: fin ? 1 : 0 });
   if (earned) sendTo(A.id, { t: 'ksinv', i: A.id, inv: A.ks, earned });
   bcast(rosterMsg());
   if (MATCH.state === 'live' && !suicide) {
@@ -1745,7 +1755,7 @@ function pickSpawn(id) {
 function hostSpawn(P, ld, keep) {
   if (MATCH.state === 'end') return;
   if (keep) { if (!P.alive || hpNow(P) < HP_MAX) return; }
-  else { if (P.alive) return; if (P.deathAt && now() - P.deathAt < RESPAWN_MS - 400) return; }
+  else { if (P.alive) return; if (P.deathAt && now() - P.deathAt < 450) return; } // players respawn when their killcam ends or they skip it
   P.ld = sanitizeLd(ld); P.perks = MATCH.mode === 'gun' ? new Set() : new Set(P.ld.k);
   let x, y, z, yaw;
   if (keep) { [x, y, z] = P.p; yaw = null; } else { const s = pickSpawn(P.id); x = s.x; y = s.y; z = s.z; yaw = spawnYaw(x, z); }
@@ -1921,10 +1931,11 @@ function clientRecv(m) {
     case 'st': {
       const r = REMOTES.get(m.i); if (!r) return;
       r.buf.push({ t: now(), p: m.p, y: m.y, x: m.x, c: m.c, g: m.g }); if (r.buf.length > 40) r.buf.shift();
-      r.w = m.w; break;
+      r.w = m.w; r.ads = m.a ? 1 : 0; break;
     }
     case 'sh': {
       const r = REMOTES.get(m.i); if (r) r.fireAt = now();
+      recEvent({ k: 'sh', i: m.i, w: m.w, o: m.o, e: m.e });
       if (m.w === 'knife') { if (r) r.meleeT = 0.4; SFX.swing(); break; }
       if (!Array.isArray(m.o)) break;
       let ox = m.o[0], oy = m.o[1], oz = m.o[2];
@@ -1950,7 +1961,7 @@ function clientRecv(m) {
     }
     case 'nd': spawnNade(m); break;
     case 'pj': {
-      if (m.o === MY.id) break; spawnProj(m, false); SFX.shot(m.k === 'bolt' ? 'xbow' : 'rpg', { x: m.p[0], y: m.p[1], z: m.p[2] });
+      if (m.o === MY.id) break; recEvent({ k: 'sh', i: m.o, w: m.k === 'bolt' ? 'xbow' : 'rpg', o: m.p, e: [] }); spawnProj(m, false); SFX.shot(m.k === 'bolt' ? 'xbow' : 'rpg', { x: m.p[0], y: m.p[1], z: m.p[2] });
       const r = REMOTES.get(m.o); if (r) { r.fireAt = now(); worldFlash(m.p[0], m.p[1], m.p[2]); } break;
     }
     case 'pjx': { const P = PROJ.get(m.id); if (P && !P.local) { if (P.k === 'bolt') stickProj(P, m.p[0], m.p[1], m.p[2]); else removeProj(m.id); } break; }
@@ -1981,6 +1992,7 @@ function nameOf(id) { if (id === MY.id) return 'You'; const e = ROSTER.get(id); 
 function colorOf(id) { const e = ROSTER.get(id); return e ? e.c : '#999'; }
 const WNAME = w => w === 'frag' ? 'Frag' : w === 'semtex' ? 'Semtex' : w === 'airstrike' ? 'Airstrike' : w === 'nuke' ? 'Tactical Nuke' : W[w] ? W[w].name : w;
 function onKill(m) {
+  killcamOnKill(m);
   const kn = nameOf(m.k), vn = nameOf(m.v), self = m.k === m.v;
   feed(self ? `<span style="color:${colorOf(m.v)}">${esc(vn)}</span><i>${esc(WNAME(m.w))}</i>` :
     `<span style="color:${colorOf(m.k)}">${esc(kn)}</span><i>${esc(WNAME(m.w))}${m.hd ? ' · headshot' : ''}</i><span style="color:${colorOf(m.v)}">${esc(vn)}</span>`);
@@ -2002,6 +2014,7 @@ function onKill(m) {
   }
 }
 function onBoom(m) {
+  recEvent({ k: 'boom', kind: m.k, p: m.p });
   removeNade(m.id); removeProj(m.id); const [x, y, z] = m.p;
   if (m.k === 'frag' || m.k === 'semtex' || m.k === 'bomb' || m.k === 'rocket') {
     explosionFX(x, y, z, m.k === 'bomb' ? 1.4 : 1); SFX.boom({ x, y, z }, m.k === 'bomb' ? 1.3 : 1);
@@ -2060,7 +2073,7 @@ function netFrame(dt) {
 function resetState() {
   for (const id of [...REMOTES.keys()]) removeRemote(id);
   ROSTER.clear(); H.players.clear(); H.timers.length = 0; H.nuke = null; NET.links.clear(); NET.bcLinks.clear(); NET.pending.clear();
-  UAVS.clear(); AIRS.length = 0; NUKE = null; for (const id of [...NADES.keys()]) removeNade(id); for (const id of [...PROJ.keys()]) removeProj(id); H.rk.clear(); BOTCFG.n = 0;
+  UAVS.clear(); AIRS.length = 0; NUKE = null; for (const id of [...NADES.keys()]) removeNade(id); for (const id of [...PROJ.keys()]) removeProj(id); stopKillcam(false); REC.frames.length = REC.events.length = 0; H.rk.clear(); BOTCFG.n = 0;
   MY.ks = { uav: 0, air: 0, nuke: 0 }; MY.streak = 0; NET.link = null; NET.code = ''; NET.online = ''; NET.ping = 0; NET.solo = false;
 }
 function leaveGame(quiet) {
@@ -2432,7 +2445,7 @@ function updateHUD(dt) {
     $('death').querySelector('.when').textContent = MATCH.state === 'end' ? '' : pauseOpen ? 'Close the menu to respawn' : left > 0 ? 'Respawning in ' + Math.ceil(left / 1000) : 'Respawning…';
   }
   // scoreboard
-  const showBoard = HUD.board || MATCH.state === 'end'; $('board').hidden = !showBoard;
+  const showBoard = (HUD.board || MATCH.state === 'end') && !KC.on; $('board').hidden = !showBoard;
   if (showBoard) renderBoard(rows);
   // misc
   HUD.fpsN++; HUD.fpsT += dt; if (HUD.fpsT > 0.5) { HUD.fps = Math.round(HUD.fpsN / HUD.fpsT); HUD.fpsN = 0; HUD.fpsT = 0; }
@@ -2650,6 +2663,7 @@ function renderSettings(el) {
     + row('Field of view <span class="muted" data-o="fov">' + SET.fov + '</span>', `<input type="range" data-k="fov" min="70" max="115" step="1" value="${SET.fov}">`)
     + row('Volume <span class="muted" data-o="vol">' + Math.round(SET.vol * 100) + '</span>', `<input type="range" data-k="vol" min="0" max="1" step="0.05" value="${SET.vol}">`)
     + row('Render resolution <span class="muted" data-o="scale">' + Math.round(SET.scale * 100) + '%</span>', `<input type="range" data-k="scale" min="0.5" max="1" step="0.05" value="${SET.scale}">`)
+    + row('Killcams <span class="muted">(the match-winning kill always plays)</span>', `<input type="checkbox" data-k="killcam" ${SET.killcam !== false ? 'checked' : ''}>`)
     + row('Shadows', `<input type="checkbox" data-k="shadows" ${SET.shadows ? 'checked' : ''}>`)
     + row('Show FPS', `<input type="checkbox" data-k="fps" ${SET.fps ? 'checked' : ''}>`)
     + '<p class="muted">If the game stutters, lower the render resolution or turn off shadows.</p>';
@@ -2733,6 +2747,7 @@ addEventListener('contextmenu', e => { if (inGame) e.preventDefault(); });
 addEventListener('wheel', e => { if (!inGame || !locked() || !LP.alive || LP.weapons.length < 2) return; switchWeapon((LP.cur + (e.deltaY > 0 ? 1 : LP.weapons.length - 1)) % LP.weapons.length); }, { passive: true });
 addEventListener('blur', () => { for (const k in KEYS) KEYS[k] = false; MOUSE.l = MOUSE.r = false; });
 addEventListener('keydown', e => {
+  if (KC.on && e.code === 'Space' && !e.repeat) { e.preventDefault(); stopKillcam(); return; }
   if (airSel && e.code === 'Escape') { closeAirMap(); openPause(); return; }
   if (!inGame) return;
   if (e.code === 'Tab') { e.preventDefault(); HUD.board = true; }
@@ -2762,6 +2777,173 @@ addEventListener('keyup', e => {
   if (e.code === 'Tab') HUD.board = false;
   if (e.code === 'KeyG' && LP.cookAt) { const cooked = (now() - LP.cookAt) / 1000; LP.cookAt = 0; if (LP.alive && LP.lethal > 0) { LP.lethal--; throwNade('frag', cooked); } }
 });
+
+// ============================================================================
+// Killcams. Every screen keeps the last few seconds of what it showed: where
+// each player was, where they aimed, their shots, grenades and explosions.
+// When you die it replays that from your killer's eyes, slows down for the
+// killing shot, then turns to face your killer live for a moment (time for an
+// emote). Space skips. The match-winning kill plays for everyone.
+// ============================================================================
+const REC = { frames: [], events: [], acc: 0 };
+const REC_MS = 7000, KC_BEFORE = 3000, KC_AFTER = 450, KC_FACE = 2000, KC_SLOW = 0.4;
+function recEvent(e) { e.t = now(); REC.events.push(e); }
+function recordFrame(dt) {
+  REC.acc += dt; if (REC.acc < 1 / 30) return; REC.acc = 0;
+  const t = now(), pl = [];
+  if (LP.alive) pl.push([MY.id, LP.pos.x, LP.pos.y, LP.pos.z, LP.yaw, LP.pitch, LP.crouchK, curW(), LP.adsT, LP.weapons[LP.cur] ? LP.weapons[LP.cur].optic : 'iron']);
+  for (const r of REMOTES.values()) if (r.alive && r.rp && r.model.visible) pl.push([r.id, r.rp.x, r.rp.y, r.rp.z, r.yaw, r.pitch, r.rc, r.w, r.ads || 0, MATCH.mode === 'gun' || !r.ld ? 'iron' : r.w === r.ld.s ? r.ld.so : r.w === r.ld.p ? r.ld.po : 'iron']);
+  const ob = [];
+  for (const n of NADES.values()) ob.push([n.k, n.p.x, n.p.y, n.p.z]);
+  for (const p of PROJ.values()) if (!p.done) ob.push([p.k, p.p.x, p.p.y, p.p.z]);
+  REC.frames.push({ t, pl, ob });
+  while (REC.frames.length && t - REC.frames[0].t > REC_MS) REC.frames.shift();
+  if (!KC.on) while (REC.events.length && t - REC.events[0].t > REC_MS) REC.events.shift(); // KC.ev indexes this list while a replay plays
+}
+
+const KC = { on: false, phase: 0, t: 0, start: 0, end: 0, killT: 0, killer: 0, victim: 0, final: false, ev: 0, faceUntil: 0, onDone: null, self: null, vm: new THREE.Group(), vmId: '', vmSightY: 0.1, flashT: 0, objs: [], camYaw: 0, camPos: new THREE.Vector3() };
+vmScene.add(KC.vm); KC.vm.visible = false;
+const KC_FLASH = new THREE.Sprite(new THREE.SpriteMaterial({ map: FX.flashTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true }));
+KC_FLASH.scale.setScalar(0.3); KC_FLASH.visible = false;
+function kcFrameState(t, id) {
+  const F = REC.frames; let a = null, b = null;
+  for (let i = F.length - 1; i >= 0; i--) if (F[i].t <= t) { a = F[i]; b = F[i + 1] || null; break; }
+  if (!a) a = F[0]; if (!a) return null;
+  const pa = a.pl.find(p => p[0] === id); if (!pa) return null;
+  const pb = b && b.pl.find(p => p[0] === id); if (!pb) return pa;
+  const k = clamp((t - a.t) / Math.max(1, b.t - a.t), 0, 1);
+  return [id, lerp(pa[1], pb[1], k), lerp(pa[2], pb[2], k), lerp(pa[3], pb[3], k), pa[4] + angDiff(pa[4], pb[4]) * k, lerp(pa[5], pb[5], k), lerp(pa[6], pb[6], k), k < 0.5 ? pa[7] : pb[7], lerp(pa[8], pb[8], k), pa[9]];
+}
+// Can we show this kill? Only when the killer was on screen recently and it was a gun, knife or grenade kill.
+function canKillcam(killer, victim, w) {
+  if (!killer || killer === victim || w === 'airstrike' || w === 'nuke') return false;
+  if (killer !== MY.id && !REMOTES.has(killer)) return false;
+  const since = now() - KC_BEFORE;
+  return REC.frames.some(f => f.t >= since && f.pl.some(p => p[0] === killer));
+}
+function startKillcam(killer, victim, killT, final, onDone) {
+  if (KC.on) stopKillcam(false);
+  KC.on = true; KC.phase = 1; KC.killer = killer; KC.victim = victim; KC.final = final; KC.onDone = onDone; KC.killT = killT;
+  KC.start = Math.max(REC.frames[0].t, killT - KC_BEFORE); KC.end = killT + KC_AFTER; KC.t = KC.start;
+  KC.ev = REC.events.findIndex(e => e.t >= KC.start); if (KC.ev < 0) KC.ev = REC.events.length;
+  KC.vmId = '';
+  const selfKey = MY.color + '|' + MY.name;
+  if (!KC.self || KC.selfKey !== selfKey) { if (KC.self) scene.remove(KC.self); KC.self = buildPlayer(MY.color, MY.name); KC.self.userData.tag.visible = false; scene.add(KC.self); KC.selfKey = selfKey; }
+  KC.self.visible = false;
+  const kc = $('kc'); kc.hidden = false;
+  kc.querySelector('.kt').textContent = final ? 'FINAL KILLCAM' : 'KILLCAM';
+  kc.querySelector('.kn').innerHTML = `<span style="color:${colorOf(killer)}">${esc(killer === MY.id ? 'You' : nameOf(killer))}</span>${victim ? ' <i>killed</i> <span style="color:' + colorOf(victim) + '">' + esc(victim === MY.id ? 'you' : nameOf(victim)) + '</span>' : ''}`;
+  $('death').hidden = true; VM.holder.visible = false; $('hud').classList.add('kcmode'); KC.log = { start: now() };
+}
+function stopKillcam(runDone = true) {
+  if (!KC.on) return;
+  KC.on = false; KC.phase = 0; $('kc').hidden = true; $('hud').classList.remove('kcmode'); if (KC.log) KC.log.stop = now(); KC.vm.visible = false; KC_FLASH.visible = false;
+  if (KC.self) KC.self.visible = false;
+  for (const o of KC.objs) o.visible = false;
+  for (const r of REMOTES.values()) r.tagT = 0; // name tags refresh next frame
+  $('ret').style.opacity = 0;
+  const cb = KC.onDone; KC.onDone = null; if (runDone && cb) cb();
+}
+function kcSetGun(id, optic, color) {
+  const key = id + '/' + optic + '/' + color; if (KC.vmId === key) return; KC.vmId = key;
+  while (KC.vm.children.length) KC.vm.remove(KC.vm.children[0]);
+  const g = buildGun(id, true, color, optic); g.scale.setScalar(VM_SCALE); KC.vm.add(g); KC.vmSightY = g.userData.sightY;
+  (g.userData.muzzles ? g.userData.muzzles[0] : g.userData.muzzle).add(KC_FLASH);
+}
+function kcObj(i, kind) {
+  let o = KC.objs[i];
+  if (!o) { o = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.16, 0.14), new THREE.MeshLambertMaterial({ color: 0xffffff })); scene.add(o); KC.objs[i] = o; }
+  o.material.color.set(NADE_COL[kind] || (kind === 'rocket' ? '#6b7b48' : '#3a3226')); o.visible = true; return o;
+}
+const _kv = new THREE.Vector3();
+function kcPlayEvent(e) {
+  if (e.k === 'sh') {
+    const own = e.i === KC.killer;
+    if (e.w === 'knife') { SFX.swing(); return; }
+    let ox = e.o[0], oy = e.o[1], oz = e.o[2];
+    if (own) { KC_FLASH.visible = true; KC.flashT = 0.05; vmCam.updateMatrixWorld(); _kv.set(0.2, -0.13, -0.7).applyMatrix4(camera.matrixWorld); ox = _kv.x; oy = _kv.y; oz = _kv.z; }
+    else { const r = REMOTES.get(e.i); if (r && r.model.visible && r.model.userData.gunMuzzle) { r.model.userData.gunMuzzle.getWorldPosition(_kv); ox = _kv.x; oy = _kv.y; oz = _kv.z; worldFlash(ox, oy, oz); } }
+    (e.e || []).slice(0, 4).forEach((p, i) => { tracer(ox, oy, oz, p[0], p[1], p[2]); if (i < 2) impactPuff(p[0], p[1], p[2], 0, 1, 0); });
+    SFX.shot(e.w, own ? null : { x: e.o[0], y: e.o[1], z: e.o[2] });
+  } else if (e.k === 'boom') {
+    const [x, y, z] = e.p;
+    if (e.kind === 'stun') { SFX.stunPop({ x, y, z }); worldFlash(x, y + 0.2, z); }
+    else if (e.kind === 'smoke') SFX.smoke({ x, y, z });
+    else { explosionFX(x, y, z, e.kind === 'bomb' ? 1.4 : 1); SFX.boom({ x, y, z }); }
+  } else if (e.k === 'kill' && e.v === KC.victim) {
+    const s = kcFrameState(e.t - 30, e.v); if (s) burst(s[1], s[2], s[3], colorOf(e.v), 30, 5, s[2]);
+    if (e.kk === KC.killer) { hitmarker(true); SFX.kill(); }
+  }
+}
+function updateKillcam(raw) {
+  if (!KC.on) return;
+  if (KC.phase === 1) {
+    const slow = KC.t > KC.killT - 700 && KC.t < KC.killT + 250;
+    KC.t += raw * 1000 * (slow ? KC_SLOW : 1);
+    while (KC.ev < REC.events.length && REC.events[KC.ev].t <= KC.t) kcPlayEvent(REC.events[KC.ev++]);
+    // everyone where they were
+    for (const r of REMOTES.values()) {
+      const s = r.id === KC.killer ? null : kcFrameState(KC.t, r.id);
+      if (!s) { r.model.visible = false; continue; }
+      r.model.visible = true; r.model.position.set(s[1], s[2], s[3]); r.model.rotation.y = s[4]; r.model.userData.tag.visible = false;
+      posePlayer(r.model, s[5], 0, s[6], KC.t / 1000, false); setPlayerGun(r.model, s[7]);
+    }
+    const me = KC.killer === MY.id ? null : kcFrameState(KC.t, MY.id);
+    KC.self.visible = !!me; if (me) { KC.self.position.set(me[1], me[2], me[3]); KC.self.rotation.y = me[4]; posePlayer(KC.self, me[5], 0, me[6], KC.t / 1000, false); setPlayerGun(KC.self, me[7]); }
+    let fi = REC.frames.length - 1; while (fi > 0 && REC.frames[fi].t > KC.t) fi--;
+    const ob = (REC.frames[fi] && REC.frames[fi].ob) || []; ob.forEach((o, i) => kcObj(i, o[0]).position.set(o[1], o[2], o[3])); for (let i = ob.length; i < KC.objs.length; i++) KC.objs[i].visible = false;
+    // the camera rides in the killer's eyes
+    const k = kcFrameState(KC.t, KC.killer);
+    if (k) {
+      const sight = sightOf(k[7], k[9]), ads = clamp(k[8], 0, 1);
+      camera.position.set(k[1], k[2] + lerp(EYE_STAND, EYE_CROUCH, k[6]), k[3]); camera.rotation.set(k[5], k[4], 0);
+      const fov = SET.fov / lerp(1, sight.zoom || 1, ads); if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
+      const color = KC.killer === MY.id ? MY.color : colorOf(KC.killer); kcSetGun(k[7], k[9], color);
+      const scoped = (sight.kind === 'acog' || sight.kind === 'sniper') && ads > 0.9;
+      KC.vm.visible = !scoped; const hip = [0.22, -0.2, -0.5], adsP = [0, -KC.vmSightY * VM_SCALE, -0.4];
+      KC.vm.position.set(lerp(hip[0], adsP[0], ads), lerp(hip[1], adsP[1], ads), lerp(hip[2], adsP[2], ads)); KC.vm.rotation.set(0, 0, 0);
+      const retOn = scoped || ((sight.kind === 'reddot' || sight.kind === 'holo') && ads > 0.85);
+      if (retOn) updateReticle(sight.kind); $('ret').style.opacity = retOn ? 1 : 0;
+    }
+    KC.flashT -= raw; if (KC.flashT <= 0) KC_FLASH.visible = false;
+    if (KC.t >= KC.end) {
+      for (const o of KC.objs) o.visible = false; KC.vm.visible = false; $('ret').style.opacity = 0;
+      const live = KC.killer === MY.id ? LP.alive : REMOTES.get(KC.killer) && REMOTES.get(KC.killer).alive;
+      if (live) { KC.phase = 2; KC.faceUntil = now() + KC_FACE; KC.log.face = now(); KC.camFresh = true; KC.camYaw = 0; $('kc').querySelector('.kt').textContent = KC.final ? 'FINAL KILLCAM' : 'KILLCAM'; }
+      else stopKillcam();
+    }
+    return;
+  }
+  // phase 2: turn around and look the killer in the face, live
+  const r = KC.killer === MY.id ? null : REMOTES.get(KC.killer);
+  if (now() > KC.faceUntil || (r && !r.alive) || (!r && KC.killer !== MY.id)) { stopKillcam(); return; }
+  let px, py, pz, yaw, crouch;
+  if (r) { px = r.rp.x; py = r.rp.y; pz = r.rp.z; yaw = r.yaw; crouch = r.rc; r.model.userData.tag.visible = true; }
+  else { px = LP.pos.x; py = LP.pos.y; pz = LP.pos.z; yaw = LP.yaw; crouch = LP.crouchK; KC.self.visible = true; KC.self.position.set(px, py, pz); KC.self.rotation.y = yaw; posePlayer(KC.self, LP.pitch, 0, crouch, now() / 1000, !LP.onGround); setPlayerGun(KC.self, curW()); }
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw), head = py + 1.45 - 0.36 * crouch;
+  // pull back if a wall is in the way
+  let d = 3.2; for (; d > 1.2; d -= 0.4) if (lineClear(px, head, pz, px + fx * d, head + 0.25, pz + fz * d)) break;
+  _kv.set(px + fx * d, head + 0.25, pz + fz * d); if (KC.camFresh) { KC.camPos.copy(_kv); KC.camFresh = false; } else KC.camPos.lerp(_kv, Math.min(1, raw * 8));
+  camera.position.copy(KC.camPos); camera.lookAt(px, head - 0.15, pz);
+  if (Math.abs(camera.fov - 70) > 0.01) { camera.fov = 70; camera.updateProjectionMatrix(); }
+}
+function afterOwnKillcam() {
+  if (LP.alive || !inGame) return; LP.kcSeen = LP.deadAt;
+  $('death').hidden = false; // shows 'Respawning…' (or 'Close the menu to respawn')
+  if (!pauseOpen && MATCH.state !== 'end') { LP.kcDone = LP.deadAt; requestSpawn(true); }
+}
+// Called from onKill on every screen.
+function killcamOnKill(m) {
+  recEvent({ k: 'kill', v: m.v, kk: m.k });
+  const killT = now();
+  if (m.fin) { // the match-winning kill plays for everyone
+    if (!canKillcam(m.k, m.v, m.w)) return;
+    setTimeout(() => { if (inGame && MATCH.state === 'end') startKillcam(m.k, m.v, killT, true, null); }, 700);
+  } else if (m.v === MY.id && SET.killcam !== false && canKillcam(m.k, m.v, m.w)) {
+    LP.kcPend = true;
+    setTimeout(() => { LP.kcPend = false; if (inGame && !LP.alive) startKillcam(m.k, m.v, killT, false, afterOwnKillcam); }, 600);
+  }
+}
 
 // ============================================================================
 // Main loop.
@@ -2831,6 +3013,8 @@ function updateMannequins(dt) {
   for (const m of MANNEQUINS) if (m.down > 0) { m.down -= dt; if (m.down <= 0) { m.hp = 100; m.g.visible = true; } }
 }
 function deathCam(dt) {
+  if (KC.on || (LP.kcPend && now() - LP.deadAt < 1500)) return; // the killcam is about to play, or playing
+  if (LP.kcDone !== LP.deadAt && !pauseOpen && LP.kcSeen === LP.deadAt) { LP.kcDone = LP.deadAt; requestSpawn(true); } // menu closed after a killcam
   const k = REMOTES.get(LP.killer);
   if (k && k.rp) {
     const e = camera.position, dx = k.rp.x - e.x, dy = k.rp.y + 1.2 - e.y, dz = k.rp.z - e.z;
@@ -2868,12 +3052,13 @@ function frame() {
     LP.stunT = Math.max(0, LP.stunT - dt);
     updateBots(dt); updateRemotes(dt); updateNades(raw); updateProj(raw); updateAirs(dt); updateMannequins(dt); // grenade fuses run on wall-clock time so every screen agrees
     netFrame(dt); if (NET.role === 'host') hostTick();
-    updateCamera(dt); updateViewmodel(dt); updateHUD(dt);
+    updateCamera(dt); updateViewmodel(dt); updateHUD(dt); recordFrame(dt);
+    if (KC.on) { VM.holder.visible = false; drawCrosshair($('xcan'), null, 0); updateKillcam(raw); }
     MOUSE.sdx = MOUSE.sdy = 0;
   } else menuCamera(dt);
   updateParts(dt); updateFX(dt);
   renderer.clear(); renderer.render(scene, camera);
-  if (inGame && LP.alive && VM.holder.visible) { renderer.clearDepth(); renderer.render(vmScene, vmCam); }
+  if (inGame && ((LP.alive && VM.holder.visible) || (KC.on && KC.vm.visible))) { renderer.clearDepth(); renderer.render(vmScene, vmCam); }
 }
 // A hidden tab gets no animation frames, so a worker keeps the host's match running.
 try {
