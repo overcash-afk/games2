@@ -1385,9 +1385,9 @@ function buildPlayer(color, name, hat) {
   part(0.38, 0.38, 0.38, SKIN, 0, 0.2, 0, head); part(0.4, 0.11, 0.08, VISOR, 0, 0.22, -0.18, head);
   buildHat(head, HATS[hat] ? hat : 'cap', cm, dm);
   const armR = new THREE.Group(), armL = new THREE.Group(); armR.position.set(0.36, 0.55, 0); armL.position.set(-0.36, 0.55, 0); torso.add(armR, armL);
-  for (const ar of [armR, armL]) { part(0.16, 0.46, 0.16, cm, 0, -0.21, 0, ar); part(0.14, 0.13, 0.14, SKIN, 0, -0.5, 0, ar); } // sleeves and hands
+  for (const ar of [armR, armL]) { ar.userData = { sl: part(0.16, 0.46, 0.16, cm, 0, -0.21, 0, ar), hd: part(0.14, 0.13, 0.14, SKIN, 0, -0.5, 0, ar), sh: ar.position.clone() }; } // sleeves and hands
   armR.rotation.x = armL.rotation.x = 1.35; armL.rotation.z = -0.45; armR.rotation.z = 0.1;
-  const gunHold = new THREE.Group(); gunHold.position.set(0.12, 0.42, -0.42); torso.add(gunHold);
+  const gunHold = new THREE.Group(); gunHold.position.set(0.08, 0.4, -0.3); torso.add(gunHold);
   const blob = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), BLOB); blob.rotation.x = -Math.PI / 2; blob.position.y = 0.03; root.add(blob);
   const tag = makeTag(name, '#ff5a5a'); tag.position.y = 2.25; root.add(tag);
   root.userData = { body, hipL, hipR, torso, head, armR, armL, gunHold, tag, gunId: null, blob, hat };
@@ -1396,7 +1396,8 @@ function buildPlayer(color, name, hat) {
 function setPlayerGun(model, id) {
   const u = model.userData; if (u.gunId === id) return; u.gunId = id;
   while (u.gunHold.children.length) u.gunHold.remove(u.gunHold.children[0]);
-  if (id && GUNS[id]) { const g = buildGun(id, false); g.scale.setScalar(1.25); u.gunHold.add(g); u.gunMuzzle = g.userData.muzzle; }
+  u.gunHold.position.x = id === 'akimbo' ? 0 : 0.08; // akimbo pistols sit either side of the chest
+  if (id && GUNS[id]) { const g = buildGun(id, false); g.scale.setScalar(GUN_TP); u.gunHold.add(g); u.gunMuzzle = g.userData.muzzle; }
 }
 function makeTag(text, color) {
   const c = document.createElement('canvas'); c.width = 256; c.height = 64; const g = c.getContext('2d');
@@ -1407,6 +1408,23 @@ function makeTag(text, color) {
 }
 // Pose a player model: pitch tilts the torso and arms, speed swings the legs, crouch bends the knees.
 // ex (optional): side (strafe speed, + = right), rel (reloading), thr (0..1 into a throw), fl (0..1 flinch), fall (0..1 death topple)
+// Hands on the gun: each arm turns from its shoulder toward its grip and stretches (no elbows in this
+// blocky style) to reach it. The right hand takes the pistol grip, the left the foregrip (GUNS[].lh);
+// akimbo puts one hand on each pistol; with a knife the left arm hangs loose.
+const GUN_TP = 1.25, RH = [0, -0.07, 0.04];
+function setReach(arm, k) { const a = arm.userData; if (!a || !a.sl) return; a.sl.scale.y = k; a.sl.position.y = -0.21 * k; a.hd.position.y = -0.5 * k; }
+function reachArm(arm, x, y, z) {
+  const sh = arm.userData.sh, dx = x - sh.x, dy = y - sh.y, dz = z - sh.z, L = Math.hypot(dx, dy, dz) || 1;
+  arm.rotation.set(Math.atan2(-dz, -dy), 0, Math.asin(clamp(dx / L, -1, 1))); setReach(arm, clamp(L / 0.5, 0.8, 1.8));
+}
+function holdGun(u) {
+  const spec = GUNS[u.gunId], h = u.gunHold.position, a = u.gunHold.rotation.x, c = Math.cos(a), s = Math.sin(a);
+  const at = (arm, p, dx = 0) => { const y = p[1] * GUN_TP, z = p[2] * GUN_TP; reachArm(arm, h.x + (p[0] + dx) * GUN_TP, h.y + y * c - z * s, h.z + y * s + z * c); };
+  if (!spec) { u.armR.rotation.set(1.35, 0, 0.1); u.armL.rotation.set(1.35, 0, -0.45); setReach(u.armR, 1); setReach(u.armL, 1); return; }
+  if (spec.akimbo) { at(u.armR, RH, 0.13); at(u.armL, RH, -0.13); return; }
+  at(u.armR, RH);
+  if (spec.lh) at(u.armL, spec.lh); else { u.armL.rotation.set(0.25, 0, -0.12); setReach(u.armL, 1); }
+}
 function posePlayer(model, pitch, speed, crouch, t, air, ex) {
   const u = model.userData, run = clamp(speed / 7, 0, 1.2), ph = t * (5 + speed * 1.1), o = ex || {};
   const sw = air ? 0.5 : Math.sin(ph) * run * 0.8;
@@ -1419,8 +1437,7 @@ function posePlayer(model, pitch, speed, crouch, t, air, ex) {
   u.torso.rotation.x = pc * 0.45 - run * 0.14 + fl * 0.35; u.torso.rotation.z = Math.sin(ph) * 0.04 * run;
   u.head.rotation.x = pc * 0.4 + fl * 0.3;
   const bob = Math.sin(ph * 2) * 0.05 * run;
-  u.armR.rotation.x = u.armL.rotation.x = 1.35 + pc * 0.35 + bob;
-  u.gunHold.rotation.set(0, 0, 0);
+  u.gunHold.rotation.set(pc * 0.5, 0, 0); u.gunHold.position.y = 0.4 + bob * 0.3; holdGun(u); // the gun follows the aim; the arms follow the gun
   if (o.rel) { const r = Math.sin(t * 7); u.armL.rotation.x = 0.55 + r * 0.25; u.gunHold.rotation.z = 0.5; u.gunHold.rotation.x = -0.25; u.head.rotation.x -= 0.25; }
   if (o.thr > 0) { const p = o.thr; u.armR.rotation.x = p < 0.4 ? lerp(1.35, 2.9, p / 0.4) : lerp(2.9, 0.9, (p - 0.4) / 0.6); u.gunHold.rotation.x = -0.6; }
 }
@@ -2602,9 +2619,10 @@ addEventListener('pagehide', () => { try { if (NET.role) leaveGame(); } catch (e
 // shoot through the same damage rules. To everyone else they look like players.
 // ============================================================================
 const BOT_DIFF = {
-  easy:   { name: 'Easy',   react: 0.8,  turn: 3.0, err: 0.075, spread: 2.2, see: 42, headP: 0.05, jump: 0.02 },
-  normal: { name: 'Normal', react: 0.45, turn: 5.5, err: 0.038, spread: 1.4, see: 60, headP: 0.15, jump: 0.06 },
-  hard:   { name: 'Hard',   react: 0.22, turn: 9.0, err: 0.016, spread: 1.0, see: 85, headP: 0.3,  jump: 0.12 },
+  // burst: shots from an automatic before a short pause of `pause` seconds
+  easy:   { name: 'Easy',   react: 0.9,  turn: 2.6, err: 0.085, spread: 2.3,  see: 36, headP: 0.03, jump: 0.02, burst: 5,  pause: 0.45 },
+  normal: { name: 'Normal', react: 0.6,  turn: 4.2, err: 0.055, spread: 1.7,  see: 50, headP: 0.08, jump: 0.05, burst: 6,  pause: 0.4 },
+  hard:   { name: 'Hard',   react: 0.32, turn: 7.0, err: 0.032, spread: 1.3,  see: 70, headP: 0.2,  jump: 0.1,  burst: 10, pause: 0.25 },
 };
 const PREF_RANGE = { shotgun: 5, knife: 0, smg: 9, mp: 8, akimbo: 8, pistol: 12, rev: 14, burst: 18, ar: 18, lmg: 20, dmr: 26, xbow: 22, sniper: 32, rpg: 16 };
 
@@ -2695,7 +2713,7 @@ function hostSetBots(n, diff) {
 function newAI() {
   return { pos: new THREE.Vector3(), vel: new THREE.Vector3(), onGround: false, yaw: 0, pitch: 0, crouch: false, path: null, pi: 0, pathAt: 0, goal: null, goalAt: 0,
     target: 0, seenAt: 0, reactAt: 0, lastKnown: null, errY: 0, errP: 0, errAt: 0, strafe: 1, strafeAt: 0, stuckT: 0, checkAt: 0, lastX: 0, lastZ: 0,
-    mag: 0, reloadT: 0, fireCD: 0, burstLeft: 0, sendAcc: 0, thinkAt: 0, stunT: 0, w: 'ar', heard: null };
+    mag: 0, reloadT: 0, fireCD: 0, burstLeft: 0, auto: 0, sendAcc: 0, thinkAt: 0, stunT: 0, w: 'ar', heard: null };
 }
 function botWeapon(P) {
   if (MATCH.mode === 'oitc') return P.ammo > 0 ? 'pistol' : 'knife';
@@ -2783,6 +2801,7 @@ function botFire(P, D, dist) {
   a.mag--; a.fireCD = 60 / w.rpm;
   if (w.burst) { a.burstLeft = a.burstLeft > 0 ? a.burstLeft - 1 : w.burst - 1; if (a.burstLeft <= 0) a.fireCD = w.burstGap + rand(0.05, 0.25); }
   else if (!w.auto) a.fireCD += rand(0.06, 0.22);
+  else if (++a.auto >= D.burst) { a.auto = 0; a.fireCD += D.pause * rand(0.8, 1.3); }
   a.pitch += w.rv * DEG * 0.4; // a little recoil the bot then corrects
   if (a.mag <= 0 && MATCH.mode !== 'oitc') a.reloadT = w.reload;
 }
@@ -3734,7 +3753,7 @@ const keyLabel = c => c.startsWith('Digit') ? c.slice(5) : c.startsWith('Key') ?
 
 // Pose a player model for an emote, on top of the normal pose. t: seconds since it started.
 function poseEmote(model, id, t) {
-  const u = model.userData; u.gunHold.visible = false;
+  const u = model.userData; u.gunHold.visible = false; setReach(u.armR, 1); setReach(u.armL, 1);
   if (id === 'dab') {
     const k = clamp(t / 0.18, 0, 1); // snap into it
     u.armL.rotation.set(0, 0, lerp(-0.45, -2.35, k));          // left arm flung up and out
@@ -3756,7 +3775,7 @@ function poseEmote(model, id, t) {
 function resetPose(model) {
   const u = model.userData; u.gunHold.visible = true;
   u.body.rotation.y = 0; u.body.position.x = u.body.position.z = 0; // posePlayer owns the body's lean, tilt and height
-  u.armR.rotation.y = 0; u.armR.rotation.z = 0.1; u.armL.rotation.y = 0; u.armL.rotation.z = -0.45;
+  u.armR.rotation.y = 0; u.armL.rotation.y = 0; // posePlayer puts the arms on the gun
   u.head.rotation.z = 0;
 }
 
