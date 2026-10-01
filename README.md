@@ -16,11 +16,15 @@ Players find each other through the free public PeerJS server, then connect dire
 ## Features
 
 - Nuketown-style cul-de-sac: two houses with stairs and garages, a walk-through school bus, trampolines
-- Free-for-all and Gun Game
-- Five preset classes and three custom classes (primary, secondary, lethal, tactical, two perks)
+- Free-for-all and Gun Game (14 weapons, finish with the knife)
+- Bots: the host adds up to five (Easy, Normal or Hard). They use the stairs, hunt, strafe and fill empty slots; one steps aside when a friend joins. Play offline to fight them without internet.
+- 13 guns: assault rifle, burst rifle, SMG, LMG, marksman rifle, sniper, shotgun, crossbow, pistol, machine pistol, revolver, akimbo pistols, rocket launcher
+- Optics on any gun: red dot, holographic or ACOG 3.5x, chosen per gun in create-a-class
+- Crosshair tab: style your hip-fire crosshair and each optic's reticle (shape and colour), and set the gun's size and position on screen
+- Five preset classes and three custom classes (primary + optic, secondary + optic, lethal, tactical, two perks)
 - UAV (3 kills), Airstrike (5) and Nuke (15) killstreaks
 - Sliding, bunny-hopping, aim down sights, recoil, cooked grenades, knife
-- Solo practice against mannequins
+- Practice against mannequins
 
 ## Controls
 
