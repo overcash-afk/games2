@@ -17,7 +17,13 @@ Players find each other through the free public PeerJS server, then connect dire
 
 - Two maps, picked by the host: **Cul-de-sac** (Nuketown-style: two houses with stairs and garages, a walk-through school bus, trampolines) and **Depot** (an indoor warehouse with shelving aisles, catwalks, offices and a loading dock; close quarters)
 - Mantling: jump at a ledge, fence, car or window while holding W to climb onto or over it. Jump pads launch you onto the bus, the garage roofs and Depot's catwalks. The host can switch both off.
-- Free-for-all and Gun Game (14 weapons, finish with the knife)
+- Five modes:
+  - **Free-for-all**: first to the kill limit wins.
+  - **Gun Game**: 14 weapons; finish with the knife.
+  - **Sharpshooter**: everyone gets the same random gun, and it changes every 45 seconds.
+  - **One in the Chamber**: a one-bullet pistol that kills on any hit, plus your knife. Each kill earns a bullet. Three lives; last one standing wins.
+  - **Infected**: one player starts infected, with a knife and extra speed. Anyone they kill joins them. Survivors win if anyone lasts the clock.
+- Party mutators, combine any of them: low gravity, big heads (bigger headshot targets too), explosive bullets, one-shot kills, hyper speed. The host can flip them mid-match.
 - Bots: the host adds up to five (Easy, Normal or Hard). They use the stairs, hunt, strafe and fill empty slots; one steps aside when a friend joins. Play offline to fight them without internet.
 - 13 guns: assault rifle, burst rifle, SMG, LMG, marksman rifle, sniper, shotgun, crossbow, pistol, machine pistol, revolver, akimbo pistols, rocket launcher
 - Optics on any gun: red dot, holographic or ACOG 3.5x, chosen per gun in create-a-class

@@ -220,7 +220,8 @@ input[type=color]{width:38px;height:28px;border:1px solid var(--line);border-rad
         <div class="card">
           <h3 style="margin-top:0">Host a game</h3>
           <div class="muted">Mode</div>
-          <div class="row" id="modeChips" style="margin:6px 0 10px"><button class="chip on" data-v="ffa">Free-for-all</button><button class="chip" data-v="gun">Gun Game</button></div>
+          <div class="row" id="modeChips" style="margin:6px 0 4px;flex-wrap:wrap"></div>
+          <div class="muted" id="modeDesc" style="font-size:12px;margin-bottom:10px"></div>
           <div id="limitRow"><div class="muted">Kills to win</div>
           <div class="row" id="limitChips" style="margin:6px 0 10px"><button class="chip" data-v="15">15</button><button class="chip on" data-v="25">25</button><button class="chip" data-v="40">40</button></div></div>
           <div class="muted">Time limit</div>
@@ -229,6 +230,8 @@ input[type=color]{width:38px;height:28px;border:1px solid var(--line);border-rad
           <div class="row" id="mapChips" style="margin:6px 0 10px"></div>
           <div class="muted">Mantling &amp; jump pads</div>
           <div class="row" id="extrasChips" style="margin:6px 0 10px"><button class="chip" data-v="on">On</button><button class="chip" data-v="off">Off</button></div>
+          <div class="muted">Party mutators</div>
+          <div class="row" id="mutChips" style="margin:6px 0 10px;flex-wrap:wrap"></div>
           <div class="muted">Bots</div>
           <div class="row" id="botChips" style="margin:6px 0 10px"><button class="chip" data-v="0">None</button><button class="chip" data-v="1">1</button><button class="chip" data-v="2">2</button><button class="chip" data-v="3">3</button><button class="chip" data-v="5">5</button></div>
           <div class="muted">Bot difficulty</div>
@@ -345,7 +348,7 @@ function lsSet(k, v) { try { localStorage.setItem('fragtown.' + k, JSON.stringif
 
 const DEFAULT_XH = { style: 'cross', color: '#ffffff', size: 9, thick: 2, gap: 4, outline: true, dynamic: true };
 const DEFAULT_RET = { reddot: { s: 'dot', c: '#ff3b3b' }, holo: { s: 'circledot', c: '#ff3b3b' }, acog: { s: 'chevron', c: '#ff3b3b' }, sniper: { s: 'cross', c: '#111111' } };
-const SET = Object.assign({ name: '', sens: 3, adsSens: 0.85, fov: 95, vol: 0.7, shadows: true, scale: 1, quality: 'high', hat: 'cap', fps: false, cls: 'assault', killcam: true, bots: 0, botDiff: 'normal', map: 'culdesac', extras: true, vmSize: 1, vmPos: 'normal' }, lsGet('settings', {}));
+const SET = Object.assign({ name: '', sens: 3, adsSens: 0.85, fov: 95, vol: 0.7, shadows: true, scale: 1, quality: 'high', hat: 'cap', fps: false, cls: 'assault', killcam: true, bots: 0, botDiff: 'normal', map: 'culdesac', extras: true, mode: 'ffa', mut: {}, vmSize: 1, vmPos: 'normal' }, lsGet('settings', {}));
 SET.xh = Object.assign({}, DEFAULT_XH, SET.xh || {});
 SET.ret = Object.assign({}, DEFAULT_RET, SET.ret || {}); for (const k in DEFAULT_RET) SET.ret[k] = Object.assign({}, DEFAULT_RET[k], SET.ret[k] || {});
 function saveSettings() { lsSet('settings', SET); }
@@ -1579,7 +1582,7 @@ function updateMovement(dt) {
   // sprint
   LP.sprinting = !!KEYS.ShiftLeft && fwd > 0 && !w.noSprint && !LP.crouching && LP.adsT < 0.3 && !LP.sprintBlock && LP.meleeT <= 0 && LP.cookAt === 0;
   let speed = LP.sprinting ? 8.1 : LP.crouching ? 2.9 : 5.5;
-  speed *= w.move || 1; speed *= lerp(1, 0.62, LP.adsT); if (hasPerk('lightweight')) speed *= 1.1; speed *= stun;
+  speed *= w.move || 1; speed *= lerp(1, 0.62, LP.adsT); if (hasPerk('lightweight')) speed *= 1.1; speed *= stun * speedK() * (LP.kitFast || 1);
   // jump (holding space on landing keeps your speed, Krunker style)
   if (KEYS.Space && LP.onGround && !(LP.crouching && overlapsAt(LP.pos.x, LP.pos.y, LP.pos.z, H_STAND) && LP.slide <= 0)) {
     LP.vel.y = JUMP_V; LP.onGround = false; LP.slide = 0; if (!wantCrouch) LP.crouching = false; SFX.step(null, 0.12);
@@ -1595,7 +1598,7 @@ function updateMovement(dt) {
     const after = Math.hypot(LP.vel.x, LP.vel.z); if (after > before) { LP.vel.x *= before / after; LP.vel.z *= before / after; }
   }
   if (LP.slide > 0 && !LP.onGround) LP.slide -= dt;
-  LP.vel.y -= GRAV * dt;
+  LP.vel.y -= GRAV * gravK() * dt;
   const h = lerp(H_STAND, H_CROUCH, LP.crouchK);
   const n = Math.ceil(dt / (1 / 120)); for (let i = 0; i < n; i++) physicsStep(LP, dt / n, h);
   if (!LP.onGround) LP.airT += dt; else LP.airT = 0;
@@ -1607,10 +1610,11 @@ function updateMovement(dt) {
 
 // ---- weapons ----
 function makeSlot(id, infinite, optic) { const w = W[id]; return { id, optic: optic || 'iron', sight: sightOf(id, optic), mag: w.mag || 0, res: infinite ? Infinity : (w.res || 0) }; }
-function applyLoadout(ld, ggLevel) {
-  if (MATCH.mode === 'gun') {
-    const id = GUN_LADDER[clamp(ggLevel | 0, 0, GUN_LADDER.length - 1)];
-    LP.weapons = [makeSlot(id, true)]; LP.lethal = 0; LP.tactical = 0; LP.perks = new Set();
+function applyLoadout(ld, ggLevel, tm) {
+  const kit = modeKit(ld, ggLevel, tm); LP.kitFast = kit && kit.fast || 1;
+  if (kit) {
+    LP.weapons = kit.w.map(([id, inf, optic, mag, res]) => { const s = makeSlot(id, inf, optic); if (mag != null) s.mag = mag; if (res != null) s.res = res; return s; });
+    LP.lethal = 0; LP.tactical = 0; LP.perks = new Set();
   } else {
     LP.weapons = [makeSlot(ld.p, false, ld.po), makeSlot(ld.s, false, ld.so)]; LP.lethal = 1; LP.tactical = 1; LP.perks = new Set(ld.k);
   }
@@ -1645,7 +1649,7 @@ function coneDir(out, fwd, rad) {
 // Hitboxes follow the model you see on screen (shooter-favoured, fine among friends).
 function playerBoxes(r) {
   const p = r.rp, k = r.rc, base = p.y - 0.36 * k;
-  return { head: { x0: p.x - 0.24, y0: base + 1.42, z0: p.z - 0.24, x1: p.x + 0.24, y1: base + 1.98, z1: p.z + 0.24 },
+  return { head: headBox(p.x, base, p.z),
            body: { x0: p.x - 0.36, y0: p.y, z0: p.z - 0.36, x1: p.x + 0.36, y1: base + 1.42, z1: p.z + 0.36 } };
 }
 function traceShot(ox, oy, oz, dx, dy, dz, maxT) {
@@ -2018,8 +2022,9 @@ function hostGame(opts) {
   resetState(); NET.role = 'host'; NET.solo = !!opts.solo;
   MATCH.mode = opts.mode; MATCH.limit = opts.limit; MATCH.time = opts.time; MATCH.state = 'warmup';
   MATCH.map = MAPS[opts.map] ? opts.map : 'culdesac'; MATCH.extras = opts.extras !== false; loadMap(MATCH.map);
+  if (!MODES[MATCH.mode]) MATCH.mode = 'ffa'; MATCH.mut = cleanMut(opts.mut);
   MY.id = 1; MY.color = PLAYER_COLORS[0];
-  H.players.set(1, newRecord(1, MY.name, MY.color));
+  H.players.set(1, newRecord(1, MY.name, MY.color)); hostModeStart();
   if (!NET.solo) openHost(randCode());
   enterGame();
   clientRecv(rosterMsg()); clientRecv(matchMsg());
@@ -2097,8 +2102,8 @@ function bcast(m, fast, except) {
   if (except !== MY.id) clientRecv(m);
 }
 function sendTo(id, m) { if (id === MY.id) clientRecv(m); else { const L = NET.links.get(id); if (L) linkSend(L, m); } }
-function rosterMsg() { return { t: 'roster', l: [...H.players.values()].map(p => ({ id: p.id, n: p.name, c: p.color, k: p.k, d: p.d, s: p.streak, g: p.gg, a: p.alive ? 1 : 0, b: p.bot ? 1 : 0 })) }; }
-function matchMsg() { return { t: 'match', mode: MATCH.mode, limit: MATCH.limit, time: MATCH.time, state: MATCH.state, left: Math.max(0, MATCH.endAt - now()), cd: Math.max(0, MATCH.cdEnd - now()), winner: MATCH.winner, bots: BOTCFG.n, diff: BOTCFG.diff, map: MATCH.map, extras: MATCH.extras !== false }; }
+function rosterMsg() { return { t: 'roster', l: [...H.players.values()].map(p => ({ id: p.id, n: p.name, c: p.color, k: p.k, d: p.d, s: p.streak, g: p.gg, a: p.alive ? 1 : 0, b: p.bot ? 1 : 0, tm: p.tm || 0, l: p.lives == null ? OITC_LIVES : p.lives })) }; }
+function matchMsg() { return { t: 'match', mode: MATCH.mode, limit: MATCH.limit, time: MATCH.time, state: MATCH.state, left: Math.max(0, MATCH.endAt - now()), cd: Math.max(0, MATCH.cdEnd - now()), winner: MATCH.winner, bots: BOTCFG.n, diff: BOTCFG.diff, map: MATCH.map, extras: MATCH.extras !== false, sg: MATCH.sg, sgl: Math.max(0, MATCH.sgAt - now()), mut: MATCH.mut, wt: MATCH.wt }; }
 function sanitizeLd(ld) { if (!ld || typeof ld !== 'object') return PRESETS[0]; const c = sanitizeClass(ld, PRESETS[0]); c.name = String(ld.name || 'Class').slice(0, 18); c.hat = typeof ld.hat === 'string' && Object.prototype.hasOwnProperty.call(HATS, ld.hat) ? ld.hat : 'cap'; return c; }
 function hostRecv(pid, m) {
   const P = H.players.get(pid); if (!P) return;
@@ -2111,6 +2116,7 @@ function hostRecv(pid, m) {
       const cap = w.melee ? 200 : w.dmg[0] * (w.head || 1) * (w.pellets || 1) + 1;
       if (!w.melee) { const hit = (Array.isArray(m.h) ? m.h : []).some(h => { const T = H.players.get(h[0]); return T && T !== P && T.alive && now() >= T.protect; }); if (!m.nf) P.st.shots++; if (hit && P.st.hits < P.st.shots) P.st.hits++; } // a crossbow hit (nf) was already counted as a shot
       for (const h of (Array.isArray(m.h) ? m.h : [])) { const T = H.players.get(h[0]); if (T && T.id !== pid) applyDamage(T, P, clamp(+h[1] || 0, 0, cap), m.w, !!h[2], P.p); }
+      if (!w.melee && !m.nf && Array.isArray(m.e)) hostBoomBullet(P, m.e[0]);
       break;
     }
     case 'nd': if ((!LETHALS[m.k] && !TACTICALS[m.k]) || !vec3(m.p) || !vec3(m.v) || !Number.isFinite(m.f) || (pid !== MY.id && NADES.has(m.id))) return; m.o = pid; P.protect = 0; bcast(m, false, pid); break;
@@ -2128,6 +2134,7 @@ const vec3 = a => Array.isArray(a) && a.length === 3 && a.every(Number.isFinite)
 function hpNow(P) { const t = now() - P.lastHurt - REGEN_DELAY; return t > 0 ? Math.min(HP_MAX, P.hp + t / 1000 * REGEN_RATE) : P.hp; }
 function applyDamage(T, A, d, w, head, src) {
   if (!T.alive || MATCH.state === 'end' || MATCH.state === 'countdown' || now() < T.protect || d <= 0) return;
+  d = modeDamage(T, A, d, w); if (d <= 0) return;
   const explosive = w === 'frag' || w === 'semtex' || w === 'airstrike' || w === 'rpg';
   if (explosive && T.perks.has('flak')) d *= 0.5;
   const before = hpNow(T); T.hp = before - d; T.lastHurt = now();
@@ -2150,14 +2157,16 @@ function hostKill(T, A, w, head) {
   } else if (MATCH.mode === 'gun') T.gg = Math.max(0, T.gg - 1);
   const gg = MATCH.mode === 'gun' ? { [T.id]: T.gg } : null; if (gg && A) gg[A.id] = A.gg;
   if (A && !suicide) A.st.best = Math.max(A.st.best, A.streak);
-  const fin = MATCH.state === 'live' && !suicide && ((MATCH.mode === 'ffa' && A.k >= MATCH.limit) || (MATCH.mode === 'gun' && A.gg >= GUN_LADDER.length));
-  bcast({ t: 'kill', k: suicide ? T.id : A.id, v: T.id, w, hd: head ? 1 : 0, ks: suicide ? 0 : A.streak, gg, fin: fin ? 1 : 0 });
+  const mk = hostModeKill(T, A, suicide);
+  const fin = MATCH.state === 'live' && (modeOver() || (!suicide && ((MODES[MATCH.mode].limit && A.k >= MATCH.limit) || (MATCH.mode === 'gun' && A.gg >= GUN_LADDER.length))));
+  bcast(Object.assign({ t: 'kill', k: suicide ? T.id : A.id, v: T.id, w, hd: head ? 1 : 0, ks: suicide ? 0 : A.streak, gg, fin: fin ? 1 : 0 }, mk));
   if (earned) sendTo(A.id, { t: 'ksinv', i: A.id, inv: A.ks, earned });
   bcast(rosterMsg());
   if (MATCH.state === 'live' && !suicide) {
-    if (MATCH.mode === 'ffa' && A.k >= MATCH.limit) hostEndMatch(A.id);
+    if (MODES[MATCH.mode].limit && A.k >= MATCH.limit) hostEndMatch(A.id);
     if (MATCH.mode === 'gun' && A.gg >= GUN_LADDER.length) hostEndMatch(A.id);
   }
+  modeCheckEnd();
 }
 function checkStreak(A) {
   const off = A.perks.has('hardline') ? 1 : 0;
@@ -2180,11 +2189,12 @@ function hostSpawn(P, ld, keep) {
   if (MATCH.state === 'end') return;
   if (keep) { if (!P.alive || hpNow(P) < HP_MAX) return; }
   else { if (P.alive) return; if (P.deathAt && now() - P.deathAt < 450) return; } // players respawn when their killcam ends or they skip it
-  P.ld = sanitizeLd(ld); P.perks = MATCH.mode === 'gun' ? new Set() : new Set(P.ld.k);
+  if (!keep && !hostModeSpawn(P)) return;
+  P.ld = sanitizeLd(ld); P.perks = modeUsesClass() ? new Set(P.ld.k) : new Set();
   let x, y, z, yaw;
   if (keep) { [x, y, z] = P.p; yaw = null; } else { const s = pickSpawn(P.id); x = s.x; y = s.y; z = s.z; yaw = spawnYaw(x, z); }
   P.alive = true; P.hp = HP_MAX; P.lastHurt = 0; if (!keep) { P.protect = now() + PROTECT_MS; P.hasMini = false; } P.p = [x, y, z];
-  bcast({ t: 'spawn', i: P.id, p: [x, y, z], y: yaw, ld: P.ld, g: P.gg, keep: keep ? 1 : 0 });
+  bcast({ t: 'spawn', i: P.id, p: [x, y, z], y: yaw, ld: P.ld, g: P.gg, tm: P.tm || 0, keep: keep ? 1 : 0 });
   if (P.bot) botOnSpawn(P);
 }
 function hostUseStreak(P, m) {
@@ -2247,7 +2257,7 @@ function hostStartMatch() {
 }
 function hostResetScores() {
   for (const P of H.players.values()) { P.k = P.d = P.streak = P.gg = 0; P.st = freshStats(); P.ks = { uav: 0, air: 0, mini: 0, nuke: 0 }; sendTo(P.id, { t: 'ksinv', i: P.id, inv: P.ks }); }
-  H.nuke = null; H.timers.length = 0;
+  H.nuke = null; H.timers.length = 0; hostModeStart();
 }
 function hostRespawnAll() {
   for (const P of H.players.values()) { P.alive = false; P.deathAt = 0; hostSpawn(P, P.ld); }
@@ -2259,7 +2269,7 @@ function hostEndMatch(winner) {
 }
 function hostSetExtras(on) { MATCH.extras = !!on; bcast(matchMsg()); }
 function hostSetMode(mode, limit, time, map = MATCH.map, extras = MATCH.extras) {
-  MATCH.mode = mode; MATCH.limit = limit; MATCH.time = time; MATCH.extras = extras !== false;
+  MATCH.mode = MODES[mode] ? mode : 'ffa'; MATCH.limit = limit; MATCH.time = time; MATCH.extras = extras !== false;
   if (MAPS[map] && map !== MATCH.map) { MATCH.map = map; loadMap(map); } MATCH.state = 'warmup'; MATCH.endAt = 0; MATCH.winner = 0;
   hostResetScores(); bcast(matchMsg()); hostRespawnAll();
 }
@@ -2273,7 +2283,8 @@ function hostTick() {
   if (MATCH.state === 'countdown' && t >= MATCH.cdEnd) {
     MATCH.state = 'live'; MATCH.endAt = t + MATCH.time * 60000; hostResetScores(); bcast(matchMsg()); hostRespawnAll(); bcast({ t: 'feed', msg: 'Match started' });
   }
-  if (MATCH.state === 'live' && t >= MATCH.endAt) hostEndMatch(leaderId());
+  if (MATCH.state === 'live' && t >= MATCH.endAt) hostEndMatch(modeTimeWinner());
+  hostModeTick(t);
   if (MATCH.state === 'end' && t >= MATCH.endAt) { MATCH.state = 'warmup'; MATCH.winner = 0; hostResetScores(); bcast(matchMsg()); hostRespawnAll(); }
   if (H.nuke && t >= H.nuke.at) {
     const by = H.nuke.by, A = H.players.get(by); H.nuke = null; bcast({ t: 'nukeHit', by });
@@ -2346,6 +2357,7 @@ function ensureRemote(id) {
 function setRemoteHat(r, hat) {
   hat = HATS[hat] ? hat : 'cap'; if (r.hat === hat) return; r.hat = hat;
   const old = r.model, vis = old.visible; scene.remove(old); r.model = buildPlayer(r.color, r.name, hat); r.model.visible = vis; scene.add(r.model);
+  if (mut('big')) r.model.userData.head.scale.setScalar(2.2);
 }
 function removeRemote(id) { const r = REMOTES.get(id); if (!r) return; scene.remove(r.model); REMOTES.delete(id); }
 function clientRecv(m) {
@@ -2355,7 +2367,7 @@ function clientRecv(m) {
       for (const o of m.others) {
         const r = ensureRemote(o.i); if (!r) continue; r.alive = !!o.a; r.ld = o.ld; if (o.ld) setRemoteHat(r, o.ld.hat); r.buf = [{ t: now(), p: o.p, y: 0, x: 0, c: 0, g: 1 }]; r.rp.set(o.p[0], o.p[1], o.p[2]);
         const e = ROSTER.get(o.i); r.w = MATCH.mode === 'gun' ? GUN_LADDER[clamp(e ? e.g : 0, 0, GUN_LADDER.length - 1)] : o.ld ? o.ld.p : null;
-        r.ghost = !!(o.ld && o.ld.k && o.ld.k.includes('ghost') && MATCH.mode !== 'gun');
+        r.ghost = !!(o.ld && o.ld.k && o.ld.k.includes('ghost') && modeUsesClass());
       }
       enterGame(); requestSpawn(true); break;
     }
@@ -2365,6 +2377,8 @@ function clientRecv(m) {
       for (const id of [...ROSTER.keys()]) if (!seen.has(id)) ROSTER.delete(id);
       for (const id of [...REMOTES.keys()]) if (!seen.has(id)) removeRemote(id);
       const me = ROSTER.get(MY.id); if (me) MY.streak = me.s;
+      updateRemoteTeams();
+      if (me && MATCH.mode === 'oitc' && MATCH.state === 'live' && me.l <= 0 && !LP.alive) { const d = $('death'); d.querySelector('.who').textContent = 'Out of lives'; d.querySelector('.how').textContent = 'Watch the rest of the match'; }
       renderPause(); break;
     }
     case 'st': {
@@ -2396,7 +2410,7 @@ function clientRecv(m) {
       const r = ensureRemote(m.i); if (!r) break;
       r.alive = true; r.ld = m.ld; r.emote = null; r.dying = null; if (m.ld) setRemoteHat(r, m.ld.hat); r.buf = [{ t: now() - 200, p: m.p, y: m.y || 0, x: 0, c: 0, g: 1 }]; r.rp.set(m.p[0], m.p[1], m.p[2]);
       if (MATCH.mode === 'gun') r.w = GUN_LADDER[clamp(m.g | 0, 0, GUN_LADDER.length - 1)]; else if (m.ld) r.w = m.ld.p;
-      r.ghost = !!(m.ld && m.ld.k && m.ld.k.includes('ghost') && MATCH.mode !== 'gun');
+      r.ghost = !!(m.ld && m.ld.k && m.ld.k.includes('ghost') && modeUsesClass());
       break;
     }
     case 'em': { const r = REMOTES.get(m.i); if (r) { r.emote = isEmote(m.e) ? { id: m.e, t0: now() } : null; if (!r.emote) resetPose(r.model); } break; }
@@ -2425,7 +2439,7 @@ function clientRecv(m) {
     case 'nukeHit': NUKE = null; SFX.siren(false); HUD.nukeFlash = 3; SFX.boom(null, 2); LP.shake = 2; break;
     case 'match': onMatch(m); break;
     case 'feed': feed(esc(m.msg)); break;
-    case 'stats': { const n = x => Number.isFinite(+x) ? +x : 0; STATS = Array.isArray(m.l) ? m.l.slice(0, 16).map(s => ({ id: n(s.id), k: n(s.k), d: n(s.d), shots: n(s.shots), hits: Math.min(n(s.hits), n(s.shots)), hs: n(s.hs), dmg: Math.round(n(s.dmg)), best: n(s.best), gun: W[s.gun] || s.gun === 'frag' || s.gun === 'semtex' || s.gun === 'airstrike' || s.gun === 'nuke' ? s.gun : null, gunN: n(s.gunN), nem: n(s.nem), nemN: n(s.nemN), vic: n(s.vic), vicN: n(s.vicN) })) : null; break; }
+    case 'stats': { const n = x => Number.isFinite(+x) ? +x : 0; STATS = Array.isArray(m.l) ? m.l.slice(0, 16).map(s => ({ id: n(s.id), k: n(s.k), d: n(s.d), shots: n(s.shots), hits: Math.min(n(s.hits), n(s.shots)), hs: n(s.hs), dmg: Math.round(n(s.dmg)), best: n(s.best), gun: W[s.gun] || s.gun === 'frag' || s.gun === 'semtex' || s.gun === 'airstrike' || s.gun === 'nuke' || s.gun === 'boom' ? s.gun : null, gunN: n(s.gunN), nem: n(s.nem), nemN: n(s.nemN), vic: n(s.vic), vicN: n(s.vicN) })) : null; break; }
     case 'leave': removeRemote(m.i); break;
     case 'pong': NET.ping = Math.round(now() - m.c); break;
     case 'err': setMenuStatus(m.msg); leaveGame(true); showMenu(); setMenuStatus(m.msg); break;
@@ -2433,7 +2447,7 @@ function clientRecv(m) {
 }
 function nameOf(id) { if (id === MY.id) return 'You'; const e = ROSTER.get(id); return e ? e.n : 'Someone'; }
 function colorOf(id) { const e = ROSTER.get(id); return e ? e.c : '#999'; }
-const WNAME = w => w === 'frag' ? 'Frag' : w === 'semtex' ? 'Semtex' : w === 'airstrike' ? 'Airstrike' : w === 'nuke' ? 'Tactical Nuke' : W[w] ? W[w].name : w;
+const WNAME = w => w === 'boom' ? 'Explosive bullet' : w === 'frag' ? 'Frag' : w === 'semtex' ? 'Semtex' : w === 'airstrike' ? 'Airstrike' : w === 'nuke' ? 'Tactical Nuke' : W[w] ? W[w].name : w;
 function onKill(m) {
   killcamOnKill(m);
   const kn = nameOf(m.k), vn = nameOf(m.v), self = m.k === m.v;
@@ -2451,10 +2465,11 @@ function onKill(m) {
   }
   if (m.gg) {
     for (const k in m.gg) { const e = ROSTER.get(+k); if (e) e.g = m.gg[k]; }
-    if (m.gg[MY.id] !== undefined && LP.alive) {
+    if (m.gg[MY.id] !== undefined && LP.alive && MATCH.mode === 'gun') {
       const lvl = m.gg[MY.id]; if (lvl < GUN_LADDER.length) { const before = curW(); setGunGameWeapon(lvl); if (before !== curW()) centerMsg((m.v === MY.id || m.k !== MY.id ? 'DEMOTED · ' : 'LEVEL UP · ') + W[curW()].name, 'big'); }
     }
   }
+  onModeKill(m);
 }
 function onBoom(m) {
   recEvent({ k: 'boom', kind: m.k, p: m.p });
@@ -2467,17 +2482,18 @@ function onBoom(m) {
     SFX.stunPop({ x, y, z }); if (NET.role === 'host') botStunAt(x, y, z); worldFlash(x, y + 0.2, z); for (let i = 0; i < 14; i++) spawnPart(x, y + 0.2, z, rand(-6, 6), rand(1, 7), rand(-6, 6), 0.4, 0.08, '#dde8ff', 6);
     if (LP.alive) { const e = camera.position, d = Math.hypot(e.x - x, e.y - y, e.z - z); if (d < TACTICALS.stun.r && lineClear(x, y + 0.2, z, e.x, e.y, e.z)) LP.stunT = Math.max(LP.stunT, TACTICALS.stun.dur * (1 - d / TACTICALS.stun.r * 0.5)); }
   } else if (m.k === 'smoke') { SFX.smoke({ x, y, z }); smokeFX(x, y, z, TACTICALS.smoke.dur); }
+  else if (m.k === 'pop') { explosionFX(x, y, z, 0.3); SFX.boom({ x, y, z }, 0.35); }
 }
 function onMatch(m) {
   const prev = MATCH.state;
   MATCH.mode = m.mode; MATCH.limit = m.limit; MATCH.time = m.time; MATCH.state = m.state; MATCH.winner = m.winner;
   if (m.map && MAPS[m.map]) { MATCH.map = m.map; if (loadMap(m.map)) { LP.mantle = null; } } MATCH.extras = m.extras !== false;
-  MATCH.endAt = now() + m.left; MATCH.cdEnd = now() + m.cd; MATCH.bots = m.bots || 0; MATCH.diff = m.diff || 'normal';
+  MATCH.endAt = now() + m.left; MATCH.cdEnd = now() + m.cd; onModeMatch(m); updateRemoteTeams(); MATCH.bots = m.bots || 0; MATCH.diff = m.diff || 'normal';
   if ((m.state === 'warmup' || m.state === 'countdown') && NUKE) { NUKE = null; SFX.siren(false); }
   if (prev !== m.state) {
     if (m.state === 'countdown') { say('Match starting'); }
     if (m.state === 'live') { STATS = null; centerMsg('FIGHT!', 'big'); MY.ks = { uav: 0, air: 0, mini: 0, nuke: 0 }; MY.streak = 0; NUKE = null; SFX.siren(false); UAVS.clear(); }
-    if (m.state === 'end') { const w = m.winner; say(w === MY.id ? 'Victory' : 'Defeat'); SFX.siren(false); NUKE = null; }
+    if (m.state === 'end') { const w = m.winner; say((m.wt ? myTeam() === m.wt : w === MY.id) ? 'Victory' : 'Defeat'); SFX.siren(false); NUKE = null; }
     if (m.state === 'warmup' && prev === 'end') { MY.ks = { uav: 0, air: 0, mini: 0, nuke: 0 }; UAVS.clear(); }
   }
   renderPause();
@@ -2492,7 +2508,7 @@ function doSpawn(m) {
   if (!m.keep) { LP.pos.set(m.p[0], m.p[1], m.p[2]); LP.vel.set(0, 0, 0); if (m.y != null) LP.yaw = m.y; LP.pitch = 0; LP.protectUntil = now() + PROTECT_MS; LP.spawnedAt = now(); LP.firedSinceSpawn = false; }
   if (!m.keep) { LP.hp = HP_MAX; LP.lastHurt = 0; LP.stunT = 0; LP.slide = 0; LP.crouching = false; LP.recoilPool = 0; }
   LP.alive = true; LP.mantle = null;
-  applyLoadout(m.ld, m.g); $('death').hidden = true; spawnAsked = 0; LP.onGround = false;
+  applyLoadout(m.ld, m.g, m.tm | 0); $('death').hidden = true; spawnAsked = 0; LP.onGround = false;
 }
 function die(killer, w) {
   stopEmote(false); LP.alive = false; LP.deadAt = now(); LP.killer = killer; LP.reloading = false; LP.cookAt = 0; LP.adsT = 0; MY.streak = 0; MOUSE.l = false;
@@ -2632,10 +2648,14 @@ function newAI() {
     target: 0, seenAt: 0, reactAt: 0, lastKnown: null, errY: 0, errP: 0, errAt: 0, strafe: 1, strafeAt: 0, stuckT: 0, checkAt: 0, lastX: 0, lastZ: 0,
     mag: 0, reloadT: 0, fireCD: 0, burstLeft: 0, sendAcc: 0, thinkAt: 0, stunT: 0, w: 'ar', heard: null };
 }
-function botWeapon(P) { return MATCH.mode === 'gun' ? GUN_LADDER[clamp(P.gg, 0, GUN_LADDER.length - 1)] : P.ld.p; }
+function botWeapon(P) {
+  if (MATCH.mode === 'oitc') return P.ammo > 0 ? 'pistol' : 'knife';
+  const kit = modeKit(P.ld, P.gg, P.tm); return kit ? kit.w[0][0] : P.ld.p;
+}
+const botMag = (P, id) => MATCH.mode === 'oitc' && id === 'pistol' ? P.ammo || 0 : W[id].mag || 0;
 function botOnSpawn(P) {
   const a = P.ai; a.pos.set(P.p[0], P.p[1], P.p[2]); unstickBot(P); a.vel.set(0, 0, 0); a.yaw = spawnYaw(P.p[0], P.p[2]); a.pitch = 0;
-  a.path = null; a.target = 0; a.goal = null; a.w = botWeapon(P); a.mag = W[a.w].mag || 0; a.reloadT = 0; a.fireCD = 0.4; a.burstLeft = 0; a.stunT = 0;
+  a.path = null; a.target = 0; a.goal = null; a.w = botWeapon(P); a.mag = botMag(P, a.w); a.reloadT = 0; a.fireCD = 0.4; a.burstLeft = 0; a.stunT = 0;
 }
 // If a bot ends up inside something solid, move it to the nearest walkable spot.
 function unstickBot(P) {
@@ -2651,14 +2671,14 @@ function botStunAt(x, y, z) {
 function eyeOf(P) { if (P.bot) return [P.ai.pos.x, P.ai.pos.y + (P.ai.crouch ? EYE_CROUCH : EYE_STAND), P.ai.pos.z]; return [P.p[0], P.p[1] + (P.c ? EYE_CROUCH : EYE_STAND), P.p[2]]; }
 function recBoxes(T) {
   const p = T.bot ? T.ai.pos : { x: T.p[0], y: T.p[1], z: T.p[2] }, k = (T.bot ? T.ai.crouch : T.c) ? 1 : 0, base = p.y - 0.36 * k;
-  return { head: { x0: p.x - 0.24, y0: base + 1.42, z0: p.z - 0.24, x1: p.x + 0.24, y1: base + 1.98, z1: p.z + 0.24 },
+  return { head: headBox(p.x, base, p.z),
            body: { x0: p.x - 0.36, y0: p.y, z0: p.z - 0.36, x1: p.x + 0.36, y1: base + 1.42, z1: p.z + 0.36 } };
 }
 function botSense(P, D) {
   const a = P.ai, e = eyeOf(P), fx = -Math.sin(a.yaw), fz = -Math.cos(a.yaw), t = now();
   let best = null, bd = 1e9;
   for (const T of H.players.values()) {
-    if (T === P || !T.alive || t < T.protect) continue;
+    if (T === P || !T.alive || t < T.protect || (MATCH.mode === 'infect' && P.tm && P.tm === T.tm)) continue;
     const tx = T.p[0], ty = T.p[1] + 1.2, tz = T.p[2], dx = tx - e[0], dz = tz - e[2], d = Math.hypot(dx, ty - e[1], dz);
     if (d > D.see) continue;
     const front = (dx * fx + dz * fz) / (Math.hypot(dx, dz) || 1) > 0.25 || d < 4;
@@ -2709,11 +2729,13 @@ function botFire(P, D, dist) {
   bcast({ t: 'sh', i: P.id, w: id, o: e.map(r2), e: ends }, true);
   P.st.shots++; if (hits.size) P.st.hits++; // a bot's rocket counts its hit in hostBlast
   for (const h of hits.values()) applyDamage(h.T, P, h.d, id, h.head, P.p);
+  if (!w.proj) hostBoomBullet(P, ends[0]);
+  if (MATCH.mode === 'oitc') P.ammo = Math.max(0, (P.ammo || 0) - 1);
   a.mag--; a.fireCD = 60 / w.rpm;
   if (w.burst) { a.burstLeft = a.burstLeft > 0 ? a.burstLeft - 1 : w.burst - 1; if (a.burstLeft <= 0) a.fireCD = w.burstGap + rand(0.05, 0.25); }
   else if (!w.auto) a.fireCD += rand(0.06, 0.22);
   a.pitch += w.rv * DEG * 0.4; // a little recoil the bot then corrects
-  if (a.mag <= 0) a.reloadT = w.reload;
+  if (a.mag <= 0 && MATCH.mode !== 'oitc') a.reloadT = w.reload;
 }
 
 // ---- thinking and moving ----
@@ -2723,7 +2745,7 @@ function botGoal(P, D) {
   if (a.heard) { const h = a.heard; a.heard = null; return h; }
   if (a.goal && t - a.goalAt < 9000 && Math.hypot(a.goal.x - a.pos.x, a.goal.z - a.pos.z) > 2) return a.goal;
   // hunt: head for a random opponent, or wander to a spawn point
-  const foes = [...H.players.values()].filter(T => T !== P && T.alive);
+  const foes = [...H.players.values()].filter(T => T !== P && T.alive && !(MATCH.mode === 'infect' && P.tm && P.tm === T.tm));
   a.goalAt = t;
   if (foes.length && Math.random() < 0.75) { const T = foes[(Math.random() * foes.length) | 0]; return { x: T.p[0] + rand(-3, 3), y: T.p[1], z: T.p[2] + rand(-3, 3) }; }
   const s = SPAWNS[(Math.random() * SPAWNS.length) | 0]; return { x: s.x, y: s.y, z: s.z };
@@ -2736,7 +2758,8 @@ function corridorClear(p, n) {
 }
 function updateBot(P, dt) {
   const a = P.ai, D = BOT_DIFF[BOTCFG.diff] || BOT_DIFF.normal, t = now(); a.stunT = Math.max(0, a.stunT - dt);
-  const wid = botWeapon(P); if (a.w !== wid) { a.w = wid; a.mag = W[wid].mag || 0; a.reloadT = 0; a.burstLeft = 0; }
+  const wid = botWeapon(P); if (a.w !== wid) { a.w = wid; a.mag = botMag(P, wid); a.reloadT = 0; a.burstLeft = 0; }
+  if (MATCH.mode === 'oitc' && a.w === 'pistol') a.mag = P.ammo || 0;
   const w = W[a.w];
   if (t >= a.thinkAt) { a.thinkAt = t + 150; botSense(P, D); }
   const T = a.target ? H.players.get(a.target) : null; const live = MATCH.state !== 'end';
@@ -2786,7 +2809,7 @@ function updateBot(P, dt) {
   }
   // move with the same physics as players
   const wl = Math.hypot(wx, wz); if (wl > 0) { wx /= wl; wz /= wl; }
-  speed *= (w.move || 1) * (a.stunT > 0 ? 0.5 : 1) * (a.crouch ? 0.55 : 1);
+  speed *= (w.move || 1) * (a.stunT > 0 ? 0.5 : 1) * (a.crouch ? 0.55 : 1) * speedK() * ((modeKit(P.ld, P.gg, P.tm) || {}).fast || 1);
   if (a.onGround) { const k = Math.min(1, 12 * dt); a.vel.x += (wx * speed - a.vel.x) * k; a.vel.z += (wz * speed - a.vel.z) * k; }
   // stuck: hop, then give up on this route
   if (t > a.checkAt) {
@@ -2795,7 +2818,7 @@ function updateBot(P, dt) {
     if (wl > 0 && moved < 0.35) { a.stuckT += 0.7; if (a.onGround) a.vel.y = JUMP_V; if (a.stuckT > 2) { a.path = null; a.goal = null; a.goalAt = 0; a.stuckT = 0; } } else a.stuckT = 0;
   }
   if (a.onGround && T && Math.random() < D.jump * dt * 10) a.vel.y = JUMP_V;
-  a.vel.y -= GRAV * dt;
+  a.vel.y -= GRAV * gravK() * dt;
   const h = a.crouch ? H_CROUCH : H_STAND, n = Math.ceil(dt / (1 / 60)); for (let i = 0; i < n; i++) physicsStep(a, dt / n, h);
   if (a.pos.y < -3) { a.pos.set(P.p[0], 1, P.p[2]); a.vel.set(0, 0, 0); }
   P.p = [r2(a.pos.x), r2(a.pos.y), r2(a.pos.z)]; P.c = a.crouch ? 1 : 0;
@@ -2805,6 +2828,169 @@ function updateBot(P, dt) {
 function updateBots(dt) {
   if (NET.role !== 'host') return;
   for (const P of H.players.values()) if (P.bot && P.alive) updateBot(P, Math.min(dt, 0.1));
+}
+
+// ============================================================================
+// Game modes beyond Free-for-all and Gun Game, and the party mutators.
+//   Sharpshooter      everyone has the same random gun; it changes every 45 s
+//   One in the Chamber  a pistol with one bullet that kills on any hit, and a
+//                     knife; each kill gives a bullet; three lives
+//   Infected          one player starts infected (knife, faster); anyone they
+//                     kill joins them; survivors win if anyone lasts the clock
+// Teams (P.tm / roster tm): 0 none, 1 infected, 2 survivor.
+// ============================================================================
+const MODES = {
+  ffa: { name: 'Free-for-all', limit: true, desc: 'Everyone for themselves. First to the kill limit wins.' },
+  gun: { name: 'Gun Game', desc: 'Every kill moves you to the next of 14 guns. Getting knifed sends you back one.' },
+  sharp: { name: 'Sharpshooter', limit: true, desc: 'Everyone gets the same random gun, and it changes every 45 seconds.' },
+  oitc: { name: 'One in the Chamber', desc: 'A pistol with one bullet that kills on any hit, plus your knife. Every kill gives you a bullet. Three lives; last one standing wins.' },
+  infect: { name: 'Infected', desc: 'One player starts infected, with a knife and extra speed. Anyone they kill joins them. Survivors win if anyone lasts until the clock runs out.' },
+};
+const MUTATORS = { low: 'Low gravity', big: 'Big heads', boom: 'Explosive bullets', one: 'One-shot kills', fast: 'Hyper speed' };
+const SHARP_POOL = ['pistol', 'akimbo', 'rev', 'mp', 'smg', 'shotgun', 'burst', 'ar', 'lmg', 'dmr', 'xbow', 'sniper', 'rpg'];
+const SHARP_EVERY = 45000, OITC_LIVES = 3, INFECTED_COLOR = '#5cbf3c';
+MATCH.sg = 'ar'; MATCH.sgAt = 0; MATCH.mut = {}; MATCH.wt = 0;
+
+const modeName = m => (MODES[m] || MODES.ffa).name;
+const modeUsesClass = () => MATCH.mode === 'ffa' || MATCH.mode === 'infect';
+const mut = k => !!(MATCH.mut && MATCH.mut[k]);
+const gravK = () => mut('low') ? 0.4 : 1;
+const speedK = () => mut('fast') ? 1.7 : 1;
+const myTeam = () => { const e = ROSTER.get(MY.id); return e ? e.tm || 0 : 0; };
+function mutText() { const on = Object.keys(MUTATORS).filter(mut); return on.length ? on.map(k => MUTATORS[k]).join(' · ') : ''; }
+
+// The weapons a player gets in this mode: [id, infinite, optic, mag, reserve] per slot (no grenades), and a speed bonus.
+function modeKit(ld, g, tm) {
+  switch (MATCH.mode) {
+    case 'gun': return { w: [[GUN_LADDER[clamp(g | 0, 0, GUN_LADDER.length - 1)], true]] };
+    case 'sharp': return { w: [[W[MATCH.sg] ? MATCH.sg : 'ar', false]] };
+    case 'oitc': return { w: [['pistol', false, 'iron', 1, 0]] };
+    case 'infect': if (tm === 1) return { w: [['knife', true]], fast: 1.15 };
+  }
+  return null; // the player's own class
+}
+
+// ---- host ----
+function hostModeSpawn(P) {
+  if (MATCH.mode === 'infect' && MATCH.state === 'live' && !P.tm) P.tm = 1; // joining a game in progress: you're one of them
+  if (MATCH.mode === 'oitc') {
+    if (MATCH.state === 'live' && P.lives == null) { let m = OITC_LIVES; for (const O of H.players.values()) if (O !== P && O.lives != null) m = Math.min(m, O.lives); P.lives = Math.max(1, m); } // late joiners get as many lives as the unluckiest player
+    if (MATCH.state === 'live' && P.lives <= 0) return false; P.ammo = 1;
+  }
+  return true;
+}
+// Damage after mode rules: no friendly fire among the infected or among survivors, one-hit kills where they apply.
+function modeDamage(T, A, d, w) {
+  if (!A || A === T) return d;
+  if (MATCH.mode === 'infect' && A.tm && A.tm === T.tm) return 0;
+  if (MATCH.mode === 'oitc' && (w === 'pistol' || w === 'knife')) return 999;
+  if (mut('one')) return 999;
+  return d;
+}
+// Called from hostKill. Returns extra fields for the kill message.
+function hostModeKill(T, A, suicide) {
+  const out = {};
+  if (MATCH.mode === 'oitc') {
+    if (!suicide && A) { A.ammo = Math.min(W.pistol.mag, (A.ammo || 0) + 1); out.ammo = 1; }
+    if (MATCH.state === 'live') T.lives = Math.max(0, (T.lives == null ? OITC_LIVES : T.lives) - 1);
+  }
+  if (MATCH.mode === 'infect' && MATCH.state === 'live' && T.tm === 2) {
+    T.tm = 1; out.inf = T.id; bcast({ t: 'feed', msg: T.name + ' was infected' });
+  }
+  return out;
+}
+// Players still in a One in the Chamber match (late joiners who haven't spawned yet count).
+const oitcLeft = () => [...H.players.values()].filter(P => P.alive || P.lives == null || P.lives > 0);
+// True when this kill ended a mode that ends by elimination (used for the final killcam too).
+function modeOver() {
+  if (MATCH.state !== 'live' || H.players.size < 2) return false;
+  if (MATCH.mode === 'oitc') return oitcLeft().length <= 1;
+  if (MATCH.mode === 'infect') return ![...H.players.values()].some(P => P.tm === 2);
+  return false;
+}
+// Checked after every kill and on every host tick.
+function modeCheckEnd() {
+  if (MATCH.state !== 'live') return;
+  const all = [...H.players.values()];
+  if (modeOver()) {
+    if (MATCH.mode === 'oitc') { const left = oitcLeft(); hostEndMatch(left.length ? left[0].id : leaderId()); }
+    else { MATCH.wt = 1; hostEndMatch(bestOf(all.filter(P => P.tm === 1))); }
+    return;
+  }
+  if (MATCH.mode === 'infect' && all.length > 1) {
+    if (!all.some(P => P.tm === 1)) { const S = all.filter(P => P.tm === 2); const P = S[(Math.random() * S.length) | 0]; P.tm = 1; bcast({ t: 'feed', msg: P.name + ' is now infected' }); if (P.alive) { P.alive = false; P.deathAt = 0; hostSpawn(P, P.ld); } bcast(rosterMsg()); }
+  }
+}
+const bestOf = list => { let b = null; for (const P of list) if (!b || P.k > b.k) b = P; return b ? b.id : 0; };
+// The winner when the clock runs out.
+function modeTimeWinner() {
+  const all = [...H.players.values()];
+  if (MATCH.mode === 'infect') { const S = all.filter(P => P.tm === 2); if (S.length) { MATCH.wt = 2; return bestOf(S); } }
+  if (MATCH.mode === 'oitc') { let b = null; for (const P of all) { const s = (P.alive || P.lives > 0 ? 1e6 : 0) + (P.lives || 0) * 1000 + P.k; if (!b || s > b.s) b = { id: P.id, s }; } return b ? b.id : 0; }
+  return leaderId();
+}
+// Fresh match: lives, teams and the first Sharpshooter gun.
+function hostModeStart() {
+  const all = [...H.players.values()]; MATCH.wt = 0;
+  for (const P of all) { P.tm = 0; P.lives = OITC_LIVES; P.ammo = 1; }
+  if (MATCH.mode === 'infect' && MATCH.state === 'live') {
+    for (const P of all) P.tm = 2;
+    const n = all.length >= 6 ? 2 : 1, pool = all.slice();
+    for (let i = 0; i < n && pool.length > 1; i++) { const P = pool.splice((Math.random() * pool.length) | 0, 1)[0]; P.tm = 1; }
+  }
+  if (MATCH.mode === 'sharp') hostSharpRotate(true);
+}
+function hostSharpRotate(quiet) {
+  const pool = SHARP_POOL.filter(id => id !== MATCH.sg); MATCH.sg = pool[(Math.random() * pool.length) | 0]; MATCH.sgAt = now() + SHARP_EVERY;
+  if (!quiet) bcast(matchMsg());
+}
+function hostModeTick(t) {
+  if (MATCH.mode === 'sharp' && MATCH.state !== 'end' && t >= MATCH.sgAt) hostSharpRotate(false);
+  modeCheckEnd();
+}
+function hostSetMut(k, on) { if (!MUTATORS[k]) return; MATCH.mut = Object.assign({}, MATCH.mut, { [k]: !!on }); bcast(matchMsg()); }
+const cleanMut = m => { const o = {}; if (m && typeof m === 'object') for (const k in MUTATORS) if (m[k]) o[k] = true; return o; };
+// Explosive bullets: a small blast where each shot lands (not on the shooter), at most four per second per player.
+function hostBoomBullet(P, e) {
+  if (!mut('boom') || !e || !vec3(e) || now() - (P.boomAt || 0) < 250) return; P.boomAt = now();
+  bcast({ t: 'boom', k: 'pop', p: e.map(r2), o: P.id });
+  for (const T of H.players.values()) {
+    if (!T.alive || T === P) continue; const d = Math.hypot(T.p[0] - e[0], T.p[1] + 1 - e[1], T.p[2] - e[2]); if (d > 2.6) continue;
+    if (!lineClear(e[0], e[1] + 0.2, e[2], T.p[0], T.p[1] + 1, T.p[2])) continue;
+    applyDamage(T, P, 34 * (1 - d / 2.6), 'boom', false, e);
+  }
+}
+
+// ---- client ----
+// The match message changed: a new Sharpshooter gun, or team changes from the roster.
+function onModeMatch(m) {
+  MATCH.sg = W[m.sg] ? m.sg : 'ar'; MATCH.sgAt = now() + (+m.sgl || 0); MATCH.mut = cleanMut(m.mut); MATCH.wt = m.wt | 0;
+  if (MATCH.mode === 'sharp' && LP.alive && LP.ld && LP.weapons[0] && LP.weapons[0].id !== MATCH.sg) {
+    LP.weapons = [makeSlot(MATCH.sg, false)]; LP.cur = 0; LP.reloading = false; LP.switchT = 0.3; LP.adsT = 0; LP.burstLeft = 0; VM.set(LP.weapons[0]);
+    centerMsg('NEW GUN · ' + W[MATCH.sg].name, 'big'); SFX.beep();
+  }
+}
+function onModeKill(m) {
+  if (m.ammo && m.k === MY.id && MATCH.mode === 'oitc' && LP.alive) { const s = LP.weapons.find(s => s.id === 'pistol'); if (s) { s.mag = Math.min(W.pistol.mag, s.mag + 1); centerMsg('+1 BULLET', 'big'); } }
+  if (m.inf === MY.id) setTimeout(() => centerMsg('YOU\'RE INFECTED', 'red'), 600);
+}
+// Infected players look green to everyone else.
+function updateRemoteTeams() {
+  for (const r of REMOTES.values()) {
+    const e = ROSTER.get(r.id), inf = MATCH.mode === 'infect';
+    const c = !e ? r.color : inf && e.tm === 1 ? INFECTED_COLOR : inf && e.c === PLAYER_COLORS[2] ? '#ececec' : e.c; // player 3 is green: white while the infected are around
+    if (c !== r.color) { r.color = c; const old = r.model, vis = old.visible; scene.remove(old); r.model = buildPlayer(c, r.name, r.hat); r.model.visible = vis; scene.add(r.model); }
+    const big = mut('big') ? 2.2 : 1; if (r.model.userData.head.scale.x !== big) r.model.userData.head.scale.setScalar(big);
+  }
+}
+// The head hitbox grows with Big heads.
+function headBox(x, base, z) { const b = mut('big'); const s = b ? 0.46 : 0.24; return { x0: x - s, y0: base + 1.42, z0: z - s, x1: x + s, y1: base + (b ? 2.36 : 1.98), z1: z + s }; }
+// HUD: the score line for the newer modes, or null to use the default.
+function modeScoreLine(me, lead) {
+  if (MATCH.mode === 'oitc') { const s = LP.weapons.find(s => s.id === 'pistol'); return `Lives ${me.l != null ? me.l : OITC_LIVES} · ${s ? s.mag : 0} bullet${s && s.mag === 1 ? '' : 's'}` + (lead && lead.id !== MY.id ? ` · ${lead.n} ${lead.k} kills` : ''); }
+  if (MATCH.mode === 'infect') { const surv = [...ROSTER.values()].filter(e => e.tm === 2).length; return (me.tm === 1 ? 'INFECTED' : me.tm === 2 ? 'SURVIVOR' : 'Warmup') + ` · ${surv} survivor${surv === 1 ? '' : 's'} left`; }
+  if (MATCH.mode === 'sharp') return `You ${me.k}` + (lead && lead.id !== MY.id ? ` · ${lead.n} ${lead.k}` : ' · leading') + ` · new gun in ${Math.max(0, Math.ceil((MATCH.sgAt - now()) / 1000))}s`;
+  return null;
 }
 
 // ============================================================================
@@ -2873,7 +3059,7 @@ function updateHUD(dt) {
   $('stun').style.opacity = clamp(LP.stunT / 2, 0, 0.85);
   HUD.nukeFlash = Math.max(0, HUD.nukeFlash - dt); $('flash').style.opacity = clamp(HUD.nukeFlash, 0, 1);
   // top bar
-  const mode = MATCH.mode === 'gun' ? 'Gun Game' : 'Free-for-all'; const warm = $('warm');
+  const mode = modeName(MATCH.mode) + (mutText() ? ' · ' + mutText() : ''); const warm = $('warm');
   const me = ROSTER.get(MY.id), rows = sortedRoster(), lead = rows[0];
   if (NET.solo && ROSTER.size <= 1 && MATCH.state === 'warmup') { $('modeLine').textContent = 'Practice'; $('timer').textContent = ''; $('scoreLine').textContent = ''; warm.hidden = false; warm.innerHTML = 'Shoot the mannequins · Esc to add bots or change class'; }
   else if (MATCH.state === 'warmup') {
@@ -2882,12 +3068,12 @@ function updateHUD(dt) {
   } else if (MATCH.state === 'countdown') {
     $('modeLine').textContent = mode; $('timer').textContent = 'Starting in ' + Math.ceil(Math.max(0, MATCH.cdEnd - now()) / 1000); $('scoreLine').textContent = ''; warm.hidden = true;
   } else if (MATCH.state === 'live') {
-    $('modeLine').textContent = mode + (MATCH.mode === 'ffa' ? ' · first to ' + MATCH.limit : ''); $('timer').textContent = fmtTime(MATCH.endAt - now()); warm.hidden = true;
-    if (me && lead) $('scoreLine').textContent = MATCH.mode === 'gun'
+    $('modeLine').textContent = mode + (MODES[MATCH.mode].limit ? ' · first to ' + MATCH.limit : ''); $('timer').textContent = fmtTime(MATCH.endAt - now()); warm.hidden = true;
+    if (me && lead) $('scoreLine').textContent = modeScoreLine(me, lead) || (MATCH.mode === 'gun'
       ? `You ${Math.min(me.g + 1, GUN_LADDER.length)}/${GUN_LADDER.length}` + (lead.id !== MY.id ? ` · ${lead.n} ${Math.min(lead.g + 1, GUN_LADDER.length)}/${GUN_LADDER.length}` : ' · leading')
-      : `You ${me.k}` + (lead.id !== MY.id ? ` · ${lead.n} ${lead.k}` : ' · leading');
+      : `You ${me.k}` + (lead.id !== MY.id ? ` · ${lead.n} ${lead.k}` : ' · leading'));
   } else if (MATCH.state === 'end') {
-    $('modeLine').textContent = 'Match over'; $('timer').textContent = MATCH.winner === MY.id ? 'VICTORY' : (nameOf(MATCH.winner) + ' wins').toUpperCase(); $('scoreLine').textContent = 'Next warmup in ' + Math.ceil(Math.max(0, MATCH.endAt - now()) / 1000); warm.hidden = true;
+    $('modeLine').textContent = 'Match over'; $('timer').textContent = MATCH.wt ? (myTeam() === MATCH.wt ? 'VICTORY · ' : '') + (MATCH.wt === 1 ? 'INFECTED WIN' : 'SURVIVORS WIN') : MATCH.winner === MY.id ? 'VICTORY' : (nameOf(MATCH.winner) + ' wins').toUpperCase(); $('scoreLine').textContent = 'Next warmup in ' + Math.ceil(Math.max(0, MATCH.endAt - now()) / 1000); warm.hidden = true;
   }
   // nuke countdown
   const nk = $('nuke'); if (NUKE) { nk.hidden = false; nk.innerHTML = `TACTICAL NUKE INCOMING<b>${Math.max(0, Math.ceil((NUKE.at - now()) / 1000))}</b>${NUKE.by === MY.id ? 'yours' : 'called by ' + esc(nameOf(NUKE.by))}`; } else nk.hidden = true;
@@ -2906,12 +3092,19 @@ function updateHUD(dt) {
   $('net').textContent = NET.role === 'guest' && NET.ping ? NET.ping + ' ms' : '';
   drawMinimap();
 }
+// Scoreboard extras for the newer modes, and the winner's banner.
+const modeColHead = () => MATCH.mode === 'oitc' ? '<th>Lives</th>' : MATCH.mode === 'infect' ? '<th>Team</th>' : '';
+const modeCol = r => MATCH.mode === 'oitc' ? `<td>${r.l != null ? r.l : OITC_LIVES}</td>` : MATCH.mode === 'infect' ? `<td>${r.tm === 1 ? '<span style="color:#7be05a">Infected</span>' : r.tm === 2 ? 'Survivor' : '–'}</td>` : '';
+function winTitle() {
+  if (MATCH.wt) return (myTeam() === MATCH.wt ? 'Victory · ' : '') + (MATCH.wt === 1 ? 'The infected win' : 'The survivors win');
+  return MATCH.winner === MY.id ? 'Victory' : esc(nameOf(MATCH.winner)) + ' wins';
+}
 function renderBoard(rows) {
   if (MATCH.state === 'end' && STATS) return renderStats(rows);
   const gun = MATCH.mode === 'gun';
-  const html = `<h2>${MATCH.state === 'end' ? (MATCH.winner === MY.id ? 'Victory' : esc(nameOf(MATCH.winner)) + ' wins') : gun ? 'Gun Game' : 'Free-for-all'}</h2>
-    <table><tr><th>Player</th>${gun ? '<th>Weapon</th>' : ''}<th>Kills</th><th>Deaths</th><th>Streak</th></tr>
-    ${rows.map(r => `<tr class="${r.id === MY.id ? 'me' : ''}"><td><span class="sw" style="background:${r.c}"></span>${esc(r.n)}${r.b ? '<span class="tag2">BOT</span>' : ''}${r.id === 1 ? ' <span class="muted">host</span>' : ''}</td>${gun ? `<td>${Math.min(r.g + 1, GUN_LADDER.length)} / ${GUN_LADDER.length}</td>` : ''}<td>${r.k}</td><td>${r.d}</td><td>${r.s}</td></tr>`).join('')}</table>
+  const html = `<h2>${MATCH.state === 'end' ? winTitle() : modeName(MATCH.mode)}</h2>
+    <table><tr><th>Player</th>${gun ? '<th>Weapon</th>' : ''}${modeColHead()}<th>Kills</th><th>Deaths</th><th>Streak</th></tr>
+    ${rows.map(r => `<tr class="${r.id === MY.id ? 'me' : ''}"><td><span class="sw" style="background:${r.c}"></span>${esc(r.n)}${r.b ? '<span class="tag2">BOT</span>' : ''}${r.id === 1 ? ' <span class="muted">host</span>' : ''}</td>${gun ? `<td>${Math.min(r.g + 1, GUN_LADDER.length)} / ${GUN_LADDER.length}</td>` : ''}${modeCol(r)}<td>${r.k}</td><td>${r.d}</td><td>${r.s}</td></tr>`).join('')}</table>
     <div class="foot">${MATCH.state === 'end' ? 'Next warmup in ' + Math.ceil(Math.max(0, MATCH.endAt - now()) / 1000) + ' s' : NET.code ? 'Invite code ' + NET.code : ''}</div>`;
   if (html !== HUD.lastBoard) { $('board').innerHTML = html; HUD.lastBoard = html; }
 }
@@ -2926,7 +3119,7 @@ function renderStats(rows) {
     + award('Rampage', s => s.best >= 2 ? s.best : null, v => v + ' in a row')
     + award('Untouchable', (s, r) => r.k + r.d > 0 ? -r.d : null, v => -v + ' death' + (v === -1 ? '' : 's'));
   const me = S.get(MY.id), gun = MATCH.mode === 'gun';
-  const html = `<h2>${MATCH.winner === MY.id ? 'Victory' : esc(nameOf(MATCH.winner)) + ' wins'}</h2>
+  const html = `<h2>${winTitle()}</h2>
     <div class="awards">${awards}</div>
     <table><tr><th>Player</th>${gun ? '<th>Weapon</th>' : ''}<th>K</th><th>D</th><th>Acc</th><th>HS</th><th>Streak</th><th>Best gun</th></tr>
     ${rows.map(r => { const s = S.get(r.id) || {}; const a = acc(s); return `<tr class="${r.id === MY.id ? 'me' : ''}"><td><span class="sw" style="background:${r.c}"></span>${esc(r.n)}${r.b ? '<span class="tag2">BOT</span>' : ''}</td>${gun ? `<td>${Math.min(r.g + 1, GUN_LADDER.length)} / ${GUN_LADDER.length}</td>` : ''}<td>${r.k}</td><td>${r.d}</td><td>${a == null ? '–' : a + '%'}</td><td>${s.hs || 0}</td><td>${s.best || 0}</td><td>${s.gun ? esc(WNAME(s.gun)) : '–'}</td></tr>`; }).join('')}</table>
@@ -3082,14 +3275,19 @@ function chipGroup(id, onPick) {
   const el = $(id); el.addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; el.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c === b)); onPick && onPick(b.dataset.v); });
   return () => el.querySelector('.chip.on').dataset.v;
 }
-const pickMode = chipGroup('modeChips', v => { $('limitRow').hidden = v === 'gun'; });
+$('modeChips').innerHTML = Object.entries(MODES).map(([k, d]) => `<button class="chip ${k === (MODES[SET.mode] ? SET.mode : 'ffa') ? 'on' : ''}" data-v="${k}">${d.name}</button>`).join('');
+const showModeDesc = v => { $('limitRow').hidden = !MODES[v].limit; $('modeDesc').textContent = MODES[v].desc; };
+const pickMode = chipGroup('modeChips', v => { SET.mode = v; saveSettings(); showModeDesc(v); }); showModeDesc(pickMode());
+$('mutChips').innerHTML = Object.entries(MUTATORS).map(([k, n]) => `<button class="chip ${SET.mut && SET.mut[k] ? 'on' : ''}" data-v="${k}">${n}</button>`).join('');
+$('mutChips').addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return; b.classList.toggle('on'); SET.mut = pickMut(); saveSettings(); });
+const pickMut = () => { const o = {}; $('mutChips').querySelectorAll('.chip.on').forEach(b => o[b.dataset.v] = true); return o; };
 const pickLimit = chipGroup('limitChips'), pickTime = chipGroup('timeChips');
 const pickBots = chipGroup('botChips', v => { SET.bots = +v; saveSettings(); }), pickDiff = chipGroup('diffChips', v => { SET.botDiff = v; saveSettings(); });
 for (const [id, v] of [['botChips', String(SET.bots)], ['diffChips', SET.botDiff]]) { const b = $(id).querySelector(`[data-v="${v}"]`) || $(id).querySelector('.chip'); b.classList.add('on'); }
 $('mapChips').innerHTML = Object.entries(MAPS).map(([k, d]) => `<button class="chip" data-v="${k}" title="${d.desc}">${d.name}</button>`).join('');
 const pickMap = chipGroup('mapChips', v => { SET.map = v; saveSettings(); }), pickExtras = chipGroup('extrasChips', v => { SET.extras = v === 'on'; saveSettings(); });
 for (const [id, v] of [['mapChips', SET.map], ['extrasChips', SET.extras === false ? 'off' : 'on']]) { const b = $(id).querySelector(`[data-v="${v}"]`) || $(id).querySelector('.chip'); b.classList.add('on'); }
-const hostOpts = () => ({ mode: pickMode(), limit: +pickLimit(), time: +pickTime(), bots: +pickBots(), diff: pickDiff(), map: pickMap(), extras: pickExtras() === 'on' });
+const hostOpts = () => ({ mode: pickMode(), limit: +pickLimit(), time: +pickTime(), bots: +pickBots(), diff: pickDiff(), map: pickMap(), extras: pickExtras() === 'on', mut: pickMut() });
 $('nameInput').value = SET.name || '';
 $('nameInput').addEventListener('input', () => { SET.name = $('nameInput').value.slice(0, 16); saveSettings(); });
 function menuName() { return ($('nameInput').value || '').replace(/\s+/g, ' ').trim().slice(0, 16) || 'Player'; }
@@ -3131,7 +3329,7 @@ function renderClasses(el, inPause) {
 function rerenderClasses() { renderClasses($('mClasses'), false); renderClasses($('pClass'), true); }
 let classToastAt = 0;
 function classChanged() {
-  if (!inGame || MATCH.mode === 'gun') return;
+  if (!inGame || !modeUsesClass()) return;
   if (LP.alive && now() - LP.spawnedAt < 6000 && !LP.firedSinceSpawn && !LP.weapons.some(s => s.id === 'minigun')) { toHost({ t: 'spawnReq', ld: currentLoadout(), keep: 1 }); }
   else if (now() - classToastAt > 1500) { classToastAt = now(); toast('Your new class applies when you respawn.'); }
 }
@@ -3171,18 +3369,20 @@ function renderPause() {
     h += `<div class="row" style="margin:8px 0"><span class="muted" style="width:70px">Difficulty</span>${Object.keys(BOT_DIFF).map(k => `<button class="chip ${BOTCFG.diff === k ? 'on' : ''}" data-diff="${k}">${BOT_DIFF[k].name}</button>`).join('')}</div>`;
     h += `<div class="row" style="margin:8px 0"><span class="muted" style="width:70px">Map</span>${Object.keys(MAPS).map(k => `<button class="chip ${MATCH.map === k ? 'on' : ''}" data-map="${k}">${MAPS[k].name}</button>`).join('')}</div>`;
     h += `<div class="row" style="margin:8px 0"><span class="muted" style="width:70px">Extras</span><button class="chip ${MATCH.extras !== false ? 'on' : ''}" data-extras="1">Mantling &amp; pads on</button><button class="chip ${MATCH.extras === false ? 'on' : ''}" data-extras="0">Off</button></div>`;
-    h += `<div class="row" style="margin:8px 0"><span class="muted" style="width:70px">Mode</span><button class="chip ${MATCH.mode === 'ffa' ? 'on' : ''}" data-mode="ffa">Free-for-all</button><button class="chip ${MATCH.mode === 'gun' ? 'on' : ''}" data-mode="gun">Gun Game</button></div>`;
-    if (MATCH.mode === 'ffa') h += `<div class="row" style="margin:8px 0"><span class="muted" style="width:70px">Kills</span>${[15, 25, 40].map(v => `<button class="chip ${MATCH.limit === v ? 'on' : ''}" data-limit="${v}">${v}</button>`).join('')}</div>`;
+    h += `<div class="row" style="margin:8px 0;flex-wrap:wrap"><span class="muted" style="width:70px">Mode</span>${Object.entries(MODES).map(([k, d]) => `<button class="chip ${MATCH.mode === k ? 'on' : ''}" data-mode="${k}" title="${d.desc}">${d.name}</button>`).join('')}</div>`;
+    h += `<div class="row" style="margin:8px 0;flex-wrap:wrap"><span class="muted" style="width:70px">Mutators</span>${Object.entries(MUTATORS).map(([k, n]) => `<button class="chip ${mut(k) ? 'on' : ''}" data-mut="${k}">${n}</button>`).join('')}</div>`;
+    if (MODES[MATCH.mode].limit) h += `<div class="row" style="margin:8px 0"><span class="muted" style="width:70px">Kills</span>${[15, 25, 40].map(v => `<button class="chip ${MATCH.limit === v ? 'on' : ''}" data-limit="${v}">${v}</button>`).join('')}</div>`;
     h += `<div class="row" style="margin:8px 0"><span class="muted" style="width:70px">Time</span>${[5, 10, 15].map(v => `<button class="chip ${MATCH.time === v ? 'on' : ''}" data-time="${v}">${v} min</button>`).join('')}</div>`;
     h += `<div class="row" style="margin-top:12px">${MATCH.state === 'warmup' ? '<button class="btn primary" id="startBtn">Start match</button>' : MATCH.state === 'countdown' ? '<button class="btn" disabled>Starting…</button>' : '<button class="btn" id="endBtn">End match</button>'}
-      <span class="muted">Changing the map, mode or limits sends everyone back to warmup.</span></div>`;
-  } else if (NET.role === 'guest') h += `<p class="muted">The host picks the mode and starts matches. Mode: ${MATCH.mode === 'gun' ? 'Gun Game' : 'Free-for-all, first to ' + MATCH.limit}, ${MATCH.time} minutes.</p>`;
+      <span class="muted">Changing the map, mode or limits sends everyone back to warmup. Mutators and mantling switch instantly.</span></div>`;
+  } else if (NET.role === 'guest') h += `<p class="muted">The host picks the mode and starts matches. Mode: ${modeName(MATCH.mode)}${MODES[MATCH.mode].limit ? ', first to ' + MATCH.limit : ''}, ${MATCH.time} minutes${mutText() ? '. Mutators: ' + mutText() : ''}.</p>`;
   $('hostCtl').innerHTML = h;
   $('hostCtl').querySelectorAll('[data-bots],[data-diff]').forEach(b => b.onclick = () => {
     const n = b.dataset.bots != null ? +b.dataset.bots : BOTCFG.n, d = b.dataset.diff || BOTCFG.diff;
     SET.bots = n; SET.botDiff = d; saveSettings(); hostSetBots(n, d); renderPause();
   });
   $('hostCtl').querySelectorAll('[data-extras]').forEach(b => b.onclick = () => { hostSetExtras(b.dataset.extras === '1'); renderPause(); });
+  $('hostCtl').querySelectorAll('[data-mut]').forEach(b => b.onclick = () => { hostSetMut(b.dataset.mut, !mut(b.dataset.mut)); renderPause(); });
   $('hostCtl').querySelectorAll('[data-mode],[data-limit],[data-time],[data-map]').forEach(b => b.onclick = () => {
     const mode = b.dataset.mode || MATCH.mode, limit = b.dataset.limit ? +b.dataset.limit : MATCH.limit, time = b.dataset.time ? +b.dataset.time : MATCH.time;
     hostSetMode(mode, limit, time, b.dataset.map || MATCH.map); renderPause();
@@ -3250,10 +3450,10 @@ addEventListener('keydown', e => {
     case 'Digit2': switchWeapon(1); break;
     case 'KeyV': case 'KeyF': melee(); break;
     case 'KeyG':
-      if (MATCH.mode === 'gun' || LP.lethal <= 0 || !LP.ld || LP.meleeT > 0) break;
+      if (!modeUsesClass() || LP.lethal <= 0 || !LP.ld || LP.meleeT > 0) break;
       if (LP.ld.l === 'frag') LP.cookAt = now(); else { LP.lethal--; throwNade(LP.ld.l, 0); }
       break;
-    case 'KeyQ': if (MATCH.mode === 'gun' || LP.tactical <= 0 || !LP.ld || LP.meleeT > 0) break; LP.tactical--; throwNade(LP.ld.t, 0); break;
+    case 'KeyQ': if (!modeUsesClass() || LP.tactical <= 0 || !LP.ld || LP.meleeT > 0) break; LP.tactical--; throwNade(LP.ld.t, 0); break;
     case 'Digit3': if (MY.ks.uav > 0) toHost({ t: 'ksUse', k: 'uav' }); break;
     case 'Digit4': if (MY.ks.air > 0) openAirMap(); break;
     case 'Digit5': { const i = LP.weapons.findIndex(s => s.id === 'minigun'); if (i >= 0) switchWeapon(i); else if (MY.ks.mini > 0 && now() - (LP.miniAsked || 0) > 1500) { LP.miniAsked = now(); toHost({ t: 'ksUse', k: 'mini' }); } break; }
@@ -3661,7 +3861,7 @@ function frame() {
   if (inGame) {
     if (LP.alive) {
       if (!pauseOpen && !airSel) { updateMovement(dt); updateWeapon(dt); }
-      else { if (LP.mantle) updateMantle(1); LP.vel.x = LP.vel.z = 0; const n = Math.ceil(dt / (1 / 120)); LP.vel.y -= GRAV * dt; for (let i = 0; i < n; i++) physicsStep(LP, dt / n, lerp(H_STAND, H_CROUCH, LP.crouchK)); }
+      else { if (LP.mantle) updateMantle(1); LP.vel.x = LP.vel.z = 0; const n = Math.ceil(dt / (1 / 120)); LP.vel.y -= GRAV * gravK() * dt; for (let i = 0; i < n; i++) physicsStep(LP, dt / n, lerp(H_STAND, H_CROUCH, LP.crouchK)); }
       if (LP.cookAt && (now() - LP.cookAt) / 1000 >= LETHALS.frag.fuse) { LP.cookAt = 0; LP.lethal--; throwNade('frag', LETHALS.frag.fuse); }
     } else deathCam(dt);
     LP.stunT = Math.max(0, LP.stunT - dt);
