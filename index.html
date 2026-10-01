@@ -198,7 +198,7 @@ input[type=color]{width:38px;height:28px;border:1px solid var(--line);border-rad
     <div id="streaks"></div>
     <div id="streakpips"></div>
   </div>
-  <div id="kc" hidden><div class="kt">KILLCAM</div><div class="kn"></div><div class="ks2">SPACE TO SKIP</div></div>
+  <div id="kc" hidden><div class="kt">KILLCAM</div><div class="kn"></div></div>
   <div id="board" hidden></div>
   <div id="click" hidden>Click to play</div>
 </div>
@@ -258,7 +258,7 @@ input[type=color]{width:38px;height:28px;border:1px solid var(--line);border-rad
         <kbd>V</kbd><span>Knife (one hit)</span>
         <kbd>G</kbd><span>Lethal grenade (hold G to cook a frag)</span>
         <kbd>Q</kbd><span>Tactical grenade</span>
-        <kbd>4 · 5 · 6</kbd><span>Killstreaks: UAV (3 kills) · Airstrike (5) · Nuke (15)</span>
+        <kbd>3 · 4 · 5 · 6</kbd><span>Killstreaks: UAV (3 kills) · Airstrike (5) · Minigun (8: 150 rounds, no sprinting, gone when empty) · Nuke (15)</span>
         <kbd>7 · 8 · 9 · 0</kbd><span>Emotes: Dab, Teabag, Hump (rebind in Settings). Moving or shooting cancels; move the mouse to look around yourself.</span>
         <kbd>Tab</kbd><span>Scoreboard</span>
         <kbd>Esc</kbd><span>Menu, classes, invite code</span>
@@ -322,7 +322,7 @@ input[type=color]{width:38px;height:28px;border:1px solid var(--line);border-rad
 // Fragtown: a small multiplayer arena shooter. One file, no build step.
 // The host's browser runs the match; friends connect with a six-character code.
 // ============================================================================
-const VERSION = 5;
+const VERSION = 6;
 const MAX_PLAYERS = 4;   // humans
 const MAX_TOTAL = 8;     // humans + bots
 const $ = id => document.getElementById(id);
@@ -348,7 +348,7 @@ function saveSettings() { lsSet('settings', SET); }
 // ---- weapons ----
 // dmg: [near, far] between range [near, far] metres. rv/rh: recoil kick in degrees.
 const W = {
-  ar:      { name: 'M4 Striker',  short: 'AR',      auto: true,  rpm: 750, dmg: [30, 22], range: [22, 45], head: 1.5, mag: 30, res: 150, reload: 2.0, hip: 3.2, ads: 0.25, rv: 0.85, rh: 0.35, zoom: 1.45, adsT: 0.22, move: 0.96, snd: 'ar' },
+  ar:      { name: 'M4 Striker',  short: 'AR',      auto: true,  rpm: 700, dmg: [26, 19], range: [20, 40], head: 1.4, mag: 30, res: 150, reload: 2.0, hip: 3.4, ads: 0.35, rv: 1.0, rh: 0.45, zoom: 1.45, adsT: 0.22, move: 0.96, snd: 'ar' },
   smg:     { name: 'Vector 9',    short: 'SMG',     auto: true,  rpm: 950, dmg: [25, 15], range: [10, 24], head: 1.4, mag: 32, res: 160, reload: 1.7, hip: 2.4, ads: 0.55, rv: 0.6, rh: 0.45, zoom: 1.3, adsT: 0.15, move: 1.06, snd: 'smg' },
   lmg:     { name: 'Brute LMG',   short: 'LMG',     auto: true,  rpm: 650, dmg: [32, 25], range: [30, 55], head: 1.4, mag: 100, res: 200, reload: 4.4, hip: 4.6, ads: 0.45, rv: 0.75, rh: 0.5, zoom: 1.5, adsT: 0.34, move: 0.86, snd: 'lmg' },
   dmr:     { name: 'Longbow DMR', short: 'DMR',     auto: false, rpm: 320, dmg: [49, 42], range: [40, 80], head: 1.6, mag: 15, res: 75, reload: 2.4, hip: 4.2, ads: 0.08, rv: 2.2, rh: 0.4, zoom: 2.4, adsT: 0.28, move: 0.94, snd: 'dmr' },
@@ -361,6 +361,7 @@ const W = {
   xbow:    { name: 'Hush Crossbow', short: 'CROSSBOW', auto: false, rpm: 60, dmg: [110, 110], range: [999, 1000], head: 1.5, mag: 1, res: 14, reload: 1.3, hip: 2.5, ads: 0, rv: 1.5, rh: 0.3, zoom: 1.8, adsT: 0.25, move: 0.98, snd: 'xbow', proj: 'bolt', speed: 75, grav: 5 },
   rpg:     { name: 'Boomstick RPG', short: 'LAUNCHER', auto: false, rpm: 60, dmg: [160, 160], range: [999, 1000], head: 1, mag: 1, res: 3, reload: 2.6, hip: 2, ads: 0.5, rv: 3, rh: 0.5, zoom: 1.3, adsT: 0.3, move: 0.92, snd: 'rpg', proj: 'rocket', speed: 40, grav: 1, r: 5.5 },
   akimbo:  { name: 'Akimbo P9s',  short: 'AKIMBO',  auto: false, rpm: 600, dmg: [26, 17], range: [10, 24], head: 1.5, mag: 24, res: 96, reload: 1.9, hip: 2.2, ads: 2.2, rv: 1.3, rh: 0.6, zoom: 1, adsT: 0.1, move: 1.08, snd: 'pistol', noAds: true },
+  minigun: { name: 'Minigun', short: 'MINIGUN', auto: true, rpm: 1200, dmg: [24, 15], range: [14, 35], head: 1.25, mag: 150, res: 0, reload: 0, hip: 3.6, ads: 3.6, rv: 0.35, rh: 0.45, zoom: 1, adsT: 0.2, move: 0.72, snd: 'lmg', noAds: true, noSprint: true, spin: 0.45, streak: true }, // killstreak only
   knife:   { name: 'Combat Knife', short: 'KNIFE',  melee: true, move: 1.12 },
 };
 const PRIMARIES = ['ar', 'burst', 'smg', 'lmg', 'dmr', 'sniper', 'shotgun', 'xbow'];
@@ -430,8 +431,9 @@ function classById(id) { return allClasses().find(c => c.id === id) || PRESETS[0
 
 const GUN_LADDER = ['pistol', 'akimbo', 'rev', 'mp', 'smg', 'shotgun', 'burst', 'ar', 'lmg', 'dmr', 'xbow', 'sniper', 'rpg', 'knife'];
 const STREAKS = [
-  { id: 'uav', name: 'UAV', kills: 3, key: '4' },
-  { id: 'air', name: 'AIRSTRIKE', kills: 5, key: '5' },
+  { id: 'uav', name: 'UAV', kills: 3, key: '3' },
+  { id: 'air', name: 'AIRSTRIKE', short: 'AIR', kills: 5, key: '4' },
+  { id: 'mini', name: 'MINIGUN', short: 'MINI', kills: 8, key: '5' },
   { id: 'nuke', name: 'NUKE', kills: 15, key: '6' },
 ];
 const PLAYER_COLORS = ['#e8453c', '#3c8ce8', '#3cc46a', '#f0b429']; // humans, by player id
@@ -532,6 +534,7 @@ const SFX = {
   beep() { if (!AU.ctx) return; const t = AU.ctx.currentTime; tone(AU.master, t, 0.09, 1200, 1200, 0.15, 'square'); tone(AU.master, t + 0.12, 0.09, 1600, 1600, 0.15, 'square'); },
   plane() { if (!AU.ctx) return; const t = AU.ctx.currentTime; const f = noiseBurst(AU.master, t, 3.2, 300, 1.5, 0.35, 'bandpass'); f.frequency.setValueAtTime(250, t); f.frequency.linearRampToValueAtTime(1200, t + 1.6); f.frequency.linearRampToValueAtTime(300, t + 3.2); },
   whistle(pos) { if (!AU.ctx) return; const d = spatial(pos, 160); if (d) tone(d, AU.ctx.currentTime, 1.0, 1400, 500, 0.12, 'sine'); },
+  spin() { if (!AU.ctx) return; const t = AU.ctx.currentTime; tone(AU.master, t, 0.5, 90, 420, 0.12, 'sawtooth'); noiseBurst(AU.master, t, 0.5, 2500, 2, 0.08, 'bandpass'); },
   siren(on) {
     if (!AU.ctx) return;
     if (!on) { if (AU.siren) { try { AU.siren.stop(); } catch (e) {} AU.siren = null; } return; }
@@ -943,6 +946,9 @@ const GUNS = {
     [0, 0.05, -0.06, 0.045, 0.055, 0.26, 'g'], [0, -0.07, 0.0, 0.038, 0.2, 0.06, 'b'], [0, 0.0, -0.1, 0.04, 0.03, 0.14, 'b'], [0, 0.05, -0.02, 0.047, 0.02, 0.06, 'a'], [0, 0.082, -0.18, 0.006, 0.014, 0.006, 'b', 's']] },
   rev: { accent: '#c9ced6', sightY: 0.09, railY: 0.08, railZ: -0.08, muzzle: [0, 0.055, -0.28], lh: [0, -0.04, 0.01], pistol: true, parts: [
     [0, 0.055, -0.16, 0.035, 0.035, 0.22, 's'], [0, 0.045, -0.02, 0.06, 0.07, 0.08, 's'], [0, 0.07, 0.03, 0.04, 0.04, 0.06, 's'], [0, -0.04, 0.03, 0.04, 0.12, 0.06, 'w'], [0, 0.085, -0.26, 0.006, 0.016, 0.006, 'b', 's']] },
+  minigun: { accent: '#7a8a4a', sightY: 0.1, muzzle: [0, 0.02, -0.78], lh: [0, 0.13, -0.12], minigun: true, parts: [
+    [0, 0.02, 0.06, 0.17, 0.17, 0.3, 'g'], [0, 0.13, -0.08, 0.03, 0.03, 0.26, 'b'], [0, 0.1, 0.03, 0.03, 0.06, 0.03, 'b'], [0, 0.1, -0.2, 0.03, 0.06, 0.03, 'b'],
+    [0.14, -0.04, 0.08, 0.11, 0.15, 0.18, 't'], [0, -0.1, 0.14, 0.045, 0.12, 0.06, 'b'], [0, 0.02, -0.12, 0.13, 0.13, 0.05, 'm'], [0, 0.02, -0.06, 0.15, 0.03, 0.03, 'a']] },
   knife: { accent: '#999', sightY: 0.05, muzzle: [0, 0, -0.25], lh: null, parts: [
     [0, 0.0, 0.02, 0.03, 0.035, 0.12, 'b'], [0, 0.0, -0.05, 0.05, 0.05, 0.015, 'm'], [0, 0.01, -0.16, 0.008, 0.045, 0.2, 's']] },
 };
@@ -970,10 +976,10 @@ function addOptic(g, spec, optic) {
   }
   return spec.railY + cy * k;
 }
-function buildGun(id, withHands, color, optic) {
+function buildGun(id, withHands, color, optic, oneHand) {
   const spec = GUNS[id], g = new THREE.Group();
   if (spec.akimbo) {
-    const a = buildGun('pistol', withHands, color), b = buildGun('pistol', withHands, color);
+    const a = buildGun('pistol', withHands, color, null, true), b = buildGun('pistol', withHands, color, null, true); // one hand on each
     a.position.x = 0.13; b.position.x = -0.13; b.scale.x = -1; g.add(a, b);
     g.userData.muzzle = a.userData.muzzle; g.userData.muzzles = [a.userData.muzzle, b.userData.muzzle]; g.userData.sightY = spec.sightY; return g;
   }
@@ -981,6 +987,11 @@ function buildGun(id, withHands, color, optic) {
   for (const p of spec.parts) {
     if (fitted && p[7] === 's') continue;
     const m = new THREE.Mesh(new THREE.BoxGeometry(p[3], p[4], p[5]), gmat(p[6], spec.accent)); m.position.set(p[0], p[1], p[2]); g.add(m);
+  }
+  if (spec.minigun) { // six barrels on a group that spins while firing
+    const spin = new THREE.Group(); spin.position.set(0, 0.02, -0.14); g.add(spin); g.userData.spin = spin;
+    for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2, b = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.62), gmat('b', spec.accent)); b.position.set(Math.cos(a) * 0.042, Math.sin(a) * 0.042, -0.31); spin.add(b); }
+    const ring = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.03), gmat('m', spec.accent)); ring.position.z = -0.5; spin.add(ring);
   }
   g.userData.sightY = fitted ? addOptic(g, spec, optic) : spec.sightY;
   const mz = new THREE.Object3D(); mz.position.set(...spec.muzzle); g.add(mz); g.userData.muzzle = mz;
@@ -990,7 +1001,7 @@ function buildGun(id, withHands, color, optic) {
     const hand = (x, y, z, ry) => { const h = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.07, 0.1), skin); h.position.set(x, y, z); g.add(h);
       const a = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.36), sleeve); a.position.set(x + (ry || 0) * 0.07, y - 0.12, z + 0.19); a.rotation.y = (ry || 0) * 0.4; a.rotation.x = 0.6; g.add(a); };
     hand(0.01, -0.03, 0.05, 1);
-    if (spec.lh) hand(spec.lh[0] - 0.02, spec.lh[1] - 0.02, spec.lh[2], -1);
+    if (spec.lh && !oneHand) hand(spec.lh[0] - 0.02, spec.lh[1] - 0.02, spec.lh[2], -1);
   }
   return g;
 }
@@ -1243,7 +1254,7 @@ function updateMovement(dt) {
   else if (LP.crouching && !overlapsAt(LP.pos.x, LP.pos.y, LP.pos.z, H_STAND)) LP.crouching = false;
   LP.crouchK = clamp(LP.crouchK + (LP.crouching ? 1 : -1) * dt * 9, 0, 1);
   // sprint
-  LP.sprinting = !!KEYS.ShiftLeft && fwd > 0 && !LP.crouching && LP.adsT < 0.3 && !LP.sprintBlock && LP.meleeT <= 0 && LP.cookAt === 0;
+  LP.sprinting = !!KEYS.ShiftLeft && fwd > 0 && !w.noSprint && !LP.crouching && LP.adsT < 0.3 && !LP.sprintBlock && LP.meleeT <= 0 && LP.cookAt === 0;
   let speed = LP.sprinting ? 8.1 : LP.crouching ? 2.9 : 5.5;
   speed *= w.move || 1; speed *= lerp(1, 0.62, LP.adsT); if (hasPerk('lightweight')) speed *= 1.1; speed *= stun;
   // jump (holding space on landing keeps your speed, Krunker style)
@@ -1365,6 +1376,18 @@ function afterShot(s, w) {
   LP.pitch = clamp(LP.pitch + kv, -1.55, 1.55); LP.yaw += kh; LP.recoilPool += kv;
   LP.bloom = Math.min(LP.bloom + (w.auto ? 0.3 : 0.9), 4);
   if (s.mag <= 0 && s.res > 0) setTimeout(() => { if (LP.alive && LP.weapons[LP.cur] === s) startReload(); }, 180);
+  if (w.streak && s.mag <= 0) setTimeout(() => dropStreakWeapon(s), 250);
+}
+// A killstreak weapon is gone once it is empty; you go back to your primary.
+function dropStreakWeapon(s) {
+  const i = LP.weapons.indexOf(s); if (i < 0) return;
+  LP.weapons.splice(i, 1); centerMsg(W[s.id].name.toUpperCase() + ' EMPTY');
+  // straight back to the primary, even mid-knife (switchWeapon would refuse then and leave you empty-handed)
+  LP.cur = 0; LP.reloading = false; LP.reloadT = 0; LP.burstLeft = 0; LP.spin = 0; LP.adsT = 0; LP.switchT = 0.32; VM.set(LP.weapons[0]);
+}
+function giveMinigun() {
+  if (!LP.alive || LP.weapons.some(s => s.id === 'minigun')) return;
+  LP.weapons.push(makeSlot('minigun')); switchWeapon(LP.weapons.length - 1); LP.spin = 0;
 }
 function hitMannequin(m, d) {
   m.hp -= d; hitmarker(false); SFX.hit(false);
@@ -1407,6 +1430,14 @@ function updateWeapon(dt) {
   if (!MOUSE.l) { LP.sprintBlock = false; }
   if (MOUSE.l && LP.sprinting) { LP.sprintBlock = true; LP.sprinting = false; LP.fireCD = Math.max(LP.fireCD, 0.1); }
   const edge = MOUSE.lEdge; MOUSE.lEdge = false;
+  // the minigun has to spin up before it fires
+  if (w.spin) {
+    const want = MOUSE.l && LP.switchT <= 0 && LP.meleeT <= 0 && s.mag > 0;
+    if (want && !LP.spin) SFX.spin();
+    LP.spin = want ? Math.min(1, (LP.spin || 0) + dt / w.spin) : Math.max(0, (LP.spin || 0) - dt * 1.5);
+    if (VM.gun && VM.gun.userData.spin) VM.gun.userData.spin.rotation.z += LP.spin * dt * 40;
+    if (want && LP.spin < 1) return;
+  }
   // a burst keeps firing after you let go of the button
   if (LP.burstLeft > 0) {
     if (s.mag <= 0 || LP.reloading || LP.meleeT > 0) LP.burstLeft = 0;
@@ -1583,7 +1614,7 @@ function updateViewmodel(dt) {
 // BroadcastChannel when host and guest are tabs of the same browser.
 // ============================================================================
 const NET = { role: null, code: '', peer: null, bc: null, links: new Map(), bcLinks: new Map(), pending: new Map(), link: null, tok: '', lastHostMsg: 0, ping: 0, pingAt: 0, online: '', solo: false, sendAcc: 0 };
-const MY = { id: 0, name: 'Player', color: '#3c8ce8', ks: { uav: 0, air: 0, nuke: 0 }, streak: 0 };
+const MY = { id: 0, name: 'Player', color: '#3c8ce8', ks: { uav: 0, air: 0, mini: 0, nuke: 0 }, streak: 0 };
 const REMOTES = new Map();
 const ROSTER = new Map();
 const MATCH = { mode: 'ffa', limit: 25, time: 10, state: 'warmup', endAt: 0, winner: 0, cdEnd: 0 };
@@ -1607,7 +1638,7 @@ const H = { players: new Map(), timers: [], nuke: null, rk: new Map() };
 // Per-match numbers for the stats screen; the host keeps them for everyone (bots too).
 const freshStats = () => ({ shots: 0, hits: 0, hs: 0, dmg: 0, best: 0, kw: {}, by: {}, vic: {} });
 function newRecord(id, name, color) {
-  return { st: freshStats(), id, name, color, p: [0, 0, 0], alive: false, hp: HP_MAX, lastHurt: 0, protect: 0, ld: PRESETS[0], perks: new Set(), k: 0, d: 0, streak: 0, gg: 0, ks: { uav: 0, air: 0, nuke: 0 }, deathAt: 0, fireAt: 0, joined: now(), c: 0 };
+  return { st: freshStats(), id, name, color, p: [0, 0, 0], alive: false, hp: HP_MAX, lastHurt: 0, protect: 0, ld: PRESETS[0], perks: new Set(), k: 0, d: 0, streak: 0, gg: 0, ks: { uav: 0, air: 0, mini: 0, nuke: 0 }, deathAt: 0, fireAt: 0, joined: now(), c: 0 };
 }
 function hostGame(opts) {
   resetState(); NET.role = 'host'; NET.solo = !!opts.solo;
@@ -1731,7 +1762,7 @@ function applyDamage(T, A, d, w, head, src) {
 }
 function hostKill(T, A, w, head) {
   if (!T.alive) return;
-  T.alive = false; T.d++; T.streak = 0; T.deathAt = now();
+  T.alive = false; T.d++; T.streak = 0; T.deathAt = now(); T.hasMini = false;
   const suicide = !A || A.id === T.id; let earned = null;
   if (!suicide) {
     A.k++; A.st.kw[w] = (A.st.kw[w] || 0) + 1; if (head) A.st.hs++; A.st.vic[T.id] = (A.st.vic[T.id] || 0) + 1; T.st.by[A.id] = (T.st.by[A.id] || 0) + 1;
@@ -1777,13 +1808,14 @@ function hostSpawn(P, ld, keep) {
   P.ld = sanitizeLd(ld); P.perks = MATCH.mode === 'gun' ? new Set() : new Set(P.ld.k);
   let x, y, z, yaw;
   if (keep) { [x, y, z] = P.p; yaw = null; } else { const s = pickSpawn(P.id); x = s.x; y = s.y; z = s.z; yaw = spawnYaw(x, z); }
-  P.alive = true; P.hp = HP_MAX; P.lastHurt = 0; if (!keep) P.protect = now() + PROTECT_MS; P.p = [x, y, z];
+  P.alive = true; P.hp = HP_MAX; P.lastHurt = 0; if (!keep) { P.protect = now() + PROTECT_MS; P.hasMini = false; } P.p = [x, y, z];
   bcast({ t: 'spawn', i: P.id, p: [x, y, z], y: yaw, ld: P.ld, g: P.gg, keep: keep ? 1 : 0 });
   if (P.bot) botOnSpawn(P);
 }
 function hostUseStreak(P, m) {
   if (MATCH.mode !== 'ffa' || !P.ks[m.k] || P.ks[m.k] <= 0 || MATCH.state === 'end') return;
   if (m.k === 'nuke' && H.nuke) return;
+  if (m.k === 'mini' && (!P.alive || P.hasMini)) return; // one minigun at a time
   P.ks[m.k]--; sendTo(P.id, { t: 'ksinv', i: P.id, inv: P.ks });
   if (m.k === 'uav') bcast({ t: 'uav', by: P.id, ms: 30000 });
   else if (m.k === 'air') {
@@ -1794,7 +1826,8 @@ function hostUseStreak(P, m) {
       const bx = x + dx * (i - 2) * 3.4 + rand(-0.8, 0.8), bz = z + dz * (i - 2) * 3.4 + rand(-0.8, 0.8);
       H.timers.push({ at: now() + 2600 + i * 230, fn: () => hostBomb(P.id, bx, bz) });
     }
-  } else if (m.k === 'nuke') { H.nuke = { by: P.id, at: now() + 10000 }; bcast({ t: 'nuke', by: P.id, ms: 10000 }); }
+  } else if (m.k === 'mini') { P.hasMini = true; bcast({ t: 'mini', by: P.id }); }
+  else if (m.k === 'nuke') { H.nuke = { by: P.id, at: now() + 10000 }; bcast({ t: 'nuke', by: P.id, ms: 10000 }); }
 }
 function groundAt(x, z, below = 20) {
   let top = 0; boxesNear(x, z, x, z, NEAR);
@@ -1838,7 +1871,7 @@ function hostStartMatch() {
   MATCH.state = 'countdown'; MATCH.cdEnd = now() + 5000; MATCH.winner = 0; bcast(matchMsg());
 }
 function hostResetScores() {
-  for (const P of H.players.values()) { P.k = P.d = P.streak = P.gg = 0; P.st = freshStats(); P.ks = { uav: 0, air: 0, nuke: 0 }; sendTo(P.id, { t: 'ksinv', i: P.id, inv: P.ks }); }
+  for (const P of H.players.values()) { P.k = P.d = P.streak = P.gg = 0; P.st = freshStats(); P.ks = { uav: 0, air: 0, mini: 0, nuke: 0 }; sendTo(P.id, { t: 'ksinv', i: P.id, inv: P.ks }); }
   H.nuke = null; H.timers.length = 0;
 }
 function hostRespawnAll() {
@@ -1994,7 +2027,7 @@ function clientRecv(m) {
     case 'boom': onBoom(m); break;
     case 'ksinv': {
       if (m.i !== MY.id) break; MY.ks = m.inv;
-      if (m.earned) { const s = STREAKS.find(s => s.id === m.earned); centerMsg(s.name + ' READY · PRESS ' + s.key, 'big'); SFX.beep(); say(s.id === 'uav' ? 'U.A.V. ready' : s.id === 'air' ? 'Airstrike ready' : 'Tactical nuke ready'); }
+      if (m.earned) { const s = STREAKS.find(s => s.id === m.earned); centerMsg(s.name + ' READY · PRESS ' + s.key, 'big'); SFX.beep(); say(s.id === 'uav' ? 'U.A.V. ready' : s.id === 'air' ? 'Airstrike ready' : s.id === 'mini' ? 'Minigun ready' : 'Tactical nuke ready'); }
       break;
     }
     case 'uav': {
@@ -2005,6 +2038,7 @@ function clientRecv(m) {
       AIRS.push({ by: m.by, x: m.x, z: m.z, dx: m.dx, dz: m.dz, t0: now(), ms: m.ms, plane: null });
       say(m.by === MY.id ? 'Airstrike inbound' : 'Enemy airstrike inbound'); SFX.plane(); if (m.by !== MY.id) centerMsg('ENEMY AIRSTRIKE INBOUND', 'red'); break;
     }
+    case 'mini': if (m.by === MY.id) { giveMinigun(); centerMsg('MINIGUN', 'big'); } else { centerMsg('ENEMY MINIGUN', 'red'); feed(`<span style="color:${colorOf(m.by)}">${esc(nameOf(m.by))}</span><i>has a minigun</i>`); } break;
     case 'nuke': NUKE = { by: m.by, at: now() + m.ms }; SFX.siren(true); say('Tactical nuke incoming'); break;
     case 'nukeHit': NUKE = null; SFX.siren(false); HUD.nukeFlash = 3; SFX.boom(null, 2); LP.shake = 2; break;
     case 'match': onMatch(m); break;
@@ -2059,9 +2093,9 @@ function onMatch(m) {
   if ((m.state === 'warmup' || m.state === 'countdown') && NUKE) { NUKE = null; SFX.siren(false); }
   if (prev !== m.state) {
     if (m.state === 'countdown') { say('Match starting'); }
-    if (m.state === 'live') { STATS = null; centerMsg('FIGHT!', 'big'); MY.ks = { uav: 0, air: 0, nuke: 0 }; MY.streak = 0; NUKE = null; SFX.siren(false); UAVS.clear(); }
+    if (m.state === 'live') { STATS = null; centerMsg('FIGHT!', 'big'); MY.ks = { uav: 0, air: 0, mini: 0, nuke: 0 }; MY.streak = 0; NUKE = null; SFX.siren(false); UAVS.clear(); }
     if (m.state === 'end') { const w = m.winner; say(w === MY.id ? 'Victory' : 'Defeat'); SFX.siren(false); NUKE = null; }
-    if (m.state === 'warmup' && prev === 'end') { MY.ks = { uav: 0, air: 0, nuke: 0 }; UAVS.clear(); }
+    if (m.state === 'warmup' && prev === 'end') { MY.ks = { uav: 0, air: 0, mini: 0, nuke: 0 }; UAVS.clear(); }
   }
   renderPause();
 }
@@ -2101,7 +2135,7 @@ function resetState() {
   for (const id of [...REMOTES.keys()]) removeRemote(id);
   ROSTER.clear(); H.players.clear(); H.timers.length = 0; H.nuke = null; NET.links.clear(); NET.bcLinks.clear(); NET.pending.clear();
   UAVS.clear(); AIRS.length = 0; NUKE = null; for (const id of [...NADES.keys()]) removeNade(id); for (const id of [...PROJ.keys()]) removeProj(id); stopKillcam(false); stopEmote(false); REC.frames.length = REC.events.length = 0; H.rk.clear(); BOTCFG.n = 0;
-  MY.ks = { uav: 0, air: 0, nuke: 0 }; MY.streak = 0; STATS = null; NET.link = null; NET.code = ''; NET.online = ''; NET.ping = 0; NET.solo = false;
+  MY.ks = { uav: 0, air: 0, mini: 0, nuke: 0 }; MY.streak = 0; STATS = null; NET.link = null; NET.code = ''; NET.online = ''; NET.ping = 0; NET.solo = false;
 }
 function leaveGame(quiet) {
   if (NET.role === 'guest' && NET.link && !quiet) guestSend({ t: 'bye' });
@@ -2421,7 +2455,7 @@ function updateHUD(dt) {
   const s = LP.weapons[LP.cur], w = s ? W[s.id] : null;
   if (w && LP.alive) {
     $('wname').textContent = w.name;
-    $('ammo').innerHTML = w.melee ? '&#9876;' : `${s.mag}<small>/ ${s.res === Infinity ? '&infin;' : s.res}</small>`;
+    $('ammo').innerHTML = w.melee ? '&#9876;' : w.streak ? `${s.mag}` : `${s.mag}<small>/ ${s.res === Infinity ? '&infin;' : s.res}</small>`;
     $('ammo').style.color = !w.melee && s.mag <= Math.ceil(w.mag * 0.25) ? '#ff7a5a' : '';
     $('equip').textContent = MATCH.mode === 'gun' ? `Gun Game ${Math.min(GUN_LADDER.indexOf(s.id) + 1, GUN_LADDER.length)} / ${GUN_LADDER.length}` + (LP.reloading ? ' · RELOADING' : '')
       : LP.ld ? `${LETHALS[LP.ld.l].name} ×${LP.lethal}  ·  ${TACTICALS[LP.ld.t].name} ×${LP.tactical}` + (LP.reloading ? '  ·  RELOADING' : '') : '';
@@ -2429,7 +2463,7 @@ function updateHUD(dt) {
   // killstreaks
   const ksHtml = MATCH.mode === 'ffa' ? STREAKS.map(k => {
     const n = MY.ks[k.id] || 0, need = k.kills - (hasPerk('hardline') ? 1 : 0);
-    return `<div class="ks ${n > 0 ? 'ready' : ''}"><span class="k">${k.key}</span><b>${need}</b>${k.id === 'air' ? 'AIR' : k.name}${n > 1 ? `<span class="n">×${n}</span>` : ''}</div>`;
+    return `<div class="ks ${n > 0 ? 'ready' : ''}"><span class="k">${k.key}</span><b>${need}</b>${k.short || k.name}${n > 1 ? `<span class="n">×${n}</span>` : ''}</div>`;
   }).join('') : '';
   if ($('streaks').dataset.h !== ksHtml) { $('streaks').innerHTML = ksHtml; $('streaks').dataset.h = ksHtml; }
   const maxK = STREAKS[STREAKS.length - 1].kills - (hasPerk('hardline') ? 1 : 0);
@@ -2704,7 +2738,7 @@ function rerenderClasses() { renderClasses($('mClasses'), false); renderClasses(
 let classToastAt = 0;
 function classChanged() {
   if (!inGame || MATCH.mode === 'gun') return;
-  if (LP.alive && now() - LP.spawnedAt < 6000 && !LP.firedSinceSpawn) { toHost({ t: 'spawnReq', ld: currentLoadout(), keep: 1 }); }
+  if (LP.alive && now() - LP.spawnedAt < 6000 && !LP.firedSinceSpawn && !LP.weapons.some(s => s.id === 'minigun')) { toHost({ t: 'spawnReq', ld: currentLoadout(), keep: 1 }); }
   else if (now() - classToastAt > 1500) { classToastAt = now(); toast('Your new class applies when you respawn.'); }
 }
 function renderSettings(el) {
@@ -2714,7 +2748,6 @@ function renderSettings(el) {
     + row('Field of view <span class="muted" data-o="fov">' + SET.fov + '</span>', `<input type="range" data-k="fov" min="70" max="115" step="1" value="${SET.fov}">`)
     + row('Volume <span class="muted" data-o="vol">' + Math.round(SET.vol * 100) + '</span>', `<input type="range" data-k="vol" min="0" max="1" step="0.05" value="${SET.vol}">`)
     + row('Render resolution <span class="muted" data-o="scale">' + Math.round(SET.scale * 100) + '%</span>', `<input type="range" data-k="scale" min="0.5" max="1" step="0.05" value="${SET.scale}">`)
-    + row('Killcams <span class="muted">(the match-winning kill always plays)</span>', `<input type="checkbox" data-k="killcam" ${SET.killcam !== false ? 'checked' : ''}>`)
     + row('Shadows', `<input type="checkbox" data-k="shadows" ${SET.shadows ? 'checked' : ''}>`)
     + row('Show FPS', `<input type="checkbox" data-k="fps" ${SET.fps ? 'checked' : ''}>`)
     + '<p class="muted">If the game stutters, lower the render resolution or turn off shadows.</p>' + `<div id="${el.id === 'mSettings' ? 'mEmotes' : 'pEmotes'}"></div>`;
@@ -2800,7 +2833,7 @@ addEventListener('contextmenu', e => { if (inGame) e.preventDefault(); });
 addEventListener('wheel', e => { if (!inGame || !locked() || !LP.alive || LP.weapons.length < 2) return; switchWeapon((LP.cur + (e.deltaY > 0 ? 1 : LP.weapons.length - 1)) % LP.weapons.length); }, { passive: true });
 addEventListener('blur', () => { for (const k in KEYS) KEYS[k] = false; MOUSE.l = MOUSE.r = false; });
 addEventListener('keydown', e => {
-  if (KC.on && e.code === 'Space' && !e.repeat) { e.preventDefault(); stopKillcam(); return; }
+  if (KC.on && e.code === 'Space') { e.preventDefault(); return; } // killcams can't be skipped
   if (airSel && e.code === 'Escape') { closeAirMap(); openPause(); return; }
   if (!inGame) return;
   if (e.code === 'Tab') { e.preventDefault(); HUD.board = true; }
@@ -2810,7 +2843,7 @@ addEventListener('keydown', e => {
   KEYS[e.code] = true;
   if (!LP.alive) return;
   const em = emoteForKey(e.code); if (em) { if (EMO.id === em) stopEmote(); else startEmote(em); return; }
-  if (EMO.id && ['KeyR', 'Digit1', 'Digit2', 'KeyV', 'KeyF', 'KeyG', 'KeyQ', 'Digit4', 'Digit5', 'Digit6'].includes(e.code)) stopEmote();
+  if (EMO.id && ['KeyR', 'Digit1', 'Digit2', 'KeyV', 'KeyF', 'KeyG', 'KeyQ', 'Digit3', 'Digit4', 'Digit5', 'Digit6'].includes(e.code)) stopEmote();
   switch (e.code) {
     case 'KeyC': KEYS._cEdge = true; break;
     case 'KeyR': startReload(); break;
@@ -2822,8 +2855,9 @@ addEventListener('keydown', e => {
       if (LP.ld.l === 'frag') LP.cookAt = now(); else { LP.lethal--; throwNade(LP.ld.l, 0); }
       break;
     case 'KeyQ': if (MATCH.mode === 'gun' || LP.tactical <= 0 || !LP.ld || LP.meleeT > 0) break; LP.tactical--; throwNade(LP.ld.t, 0); break;
-    case 'Digit4': if (MY.ks.uav > 0) toHost({ t: 'ksUse', k: 'uav' }); break;
-    case 'Digit5': if (MY.ks.air > 0) openAirMap(); break;
+    case 'Digit3': if (MY.ks.uav > 0) toHost({ t: 'ksUse', k: 'uav' }); break;
+    case 'Digit4': if (MY.ks.air > 0) openAirMap(); break;
+    case 'Digit5': { const i = LP.weapons.findIndex(s => s.id === 'minigun'); if (i >= 0) switchWeapon(i); else if (MY.ks.mini > 0 && now() - (LP.miniAsked || 0) > 1500) { LP.miniAsked = now(); toHost({ t: 'ksUse', k: 'mini' }); } break; }
     case 'Digit6': if (MY.ks.nuke > 0) toHost({ t: 'ksUse', k: 'nuke' }); break;
   }
 });
@@ -2995,7 +3029,7 @@ function killcamOnKill(m) {
   if (m.fin) { // the match-winning kill plays for everyone
     if (!canKillcam(m.k, m.v, m.w)) return;
     setTimeout(() => { if (inGame && MATCH.state === 'end') startKillcam(m.k, m.v, killT, true, null); }, 700);
-  } else if (m.v === MY.id && SET.killcam !== false && canKillcam(m.k, m.v, m.w)) {
+  } else if (m.v === MY.id && canKillcam(m.k, m.v, m.w)) {
     LP.kcPend = true;
     setTimeout(() => { LP.kcPend = false; if (inGame && !LP.alive) startKillcam(m.k, m.v, killT, false, afterOwnKillcam); }, 600);
   }
@@ -3015,7 +3049,7 @@ const EMOTES = {
 const EMOTE_SLOTS = 4, EMOTE_COOLDOWN = 1000;
 const DEFAULT_EMOTE_KEYS = [{ e: 'dab', k: 'Digit7' }, { e: 'teabag', k: 'Digit8' }, { e: 'hump', k: 'Digit9' }, { e: '', k: 'Digit0' }];
 // Keys the game already uses; an emote slot can't take these.
-const RESERVED_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyC', 'KeyR', 'Digit1', 'Digit2', 'KeyV', 'KeyF', 'KeyG', 'KeyQ', 'Digit4', 'Digit5', 'Digit6', 'Tab', 'Escape']);
+const RESERVED_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyC', 'KeyR', 'Digit1', 'Digit2', 'KeyV', 'KeyF', 'KeyG', 'KeyQ', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Tab', 'Escape']);
 SET.emotes = (Array.isArray(SET.emotes) ? SET.emotes : []).slice(0, EMOTE_SLOTS);
 for (let i = 0; i < EMOTE_SLOTS; i++) {
   const d = DEFAULT_EMOTE_KEYS[i], s = SET.emotes[i] || {};
