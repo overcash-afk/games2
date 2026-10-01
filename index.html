@@ -248,6 +248,7 @@ input[type=color]{width:38px;height:28px;border:1px solid var(--line);border-rad
         <kbd>G</kbd><span>Lethal grenade (hold G to cook a frag)</span>
         <kbd>Q</kbd><span>Tactical grenade</span>
         <kbd>4 · 5 · 6</kbd><span>Killstreaks: UAV (3 kills) · Airstrike (5) · Nuke (15)</span>
+        <kbd>7 · 8 · 9 · 0</kbd><span>Emotes: Dab, Teabag, Hump (rebind in Settings). Moving or shooting cancels; move the mouse to look around yourself.</span>
         <kbd>Tab</kbd><span>Scoreboard</span>
         <kbd>Esc</kbd><span>Menu, classes, invite code</span>
       </div>
@@ -310,7 +311,7 @@ input[type=color]{width:38px;height:28px;border:1px solid var(--line);border-rad
 // Fragtown: a small multiplayer arena shooter. One file, no build step.
 // The host's browser runs the match; friends connect with a six-character code.
 // ============================================================================
-const VERSION = 4;
+const VERSION = 5;
 const MAX_PLAYERS = 4;   // humans
 const MAX_TOTAL = 8;     // humans + bots
 const $ = id => document.getElementById(id);
@@ -1698,6 +1699,7 @@ function hostRecv(pid, m) {
     case 'rk': { const key = pid + '/' + m.id; if (!vec3(m.p) || H.rk.has(key)) return; H.rk.set(key, now()); if (H.rk.size > 200) for (const [k, t] of H.rk) if (now() - t > 15000) H.rk.delete(k); hostBlast(pid, m.p, W.rpg.r, W.rpg.dmg[0], 'rpg', m.id, 'rocket'); break; }
     case 'spawnReq': hostSpawn(P, m.ld, !!m.keep); break;
     case 'ksUse': hostUseStreak(P, m); break;
+    case 'em': if (P.alive) bcast({ t: 'em', i: pid, e: isEmote(m.e) ? m.e : null }, false, pid); break;
     case 'ping': sendTo(pid, { t: 'pong', c: m.c }); break;
     case 'bye': dropPlayer(pid); break;
   }
@@ -1945,7 +1947,7 @@ function clientRecv(m) {
     }
     case 'hurt': {
       if (m.v === MY.id) {
-        LP.hp = m.hp; LP.lastHurt = now(); SFX.hurt(); HUD.hurtFlash = 1;
+        LP.hp = m.hp; LP.lastHurt = now(); SFX.hurt(); HUD.hurtFlash = 1; stopEmote();
         if (m.s && m.a !== MY.id) damageIndicator(m.s[0], m.s[1]);
       }
       break;
@@ -1954,11 +1956,12 @@ function clientRecv(m) {
     case 'spawn': {
       if (m.i === MY.id) { doSpawn(m); break; }
       const r = ensureRemote(m.i); if (!r) break;
-      r.alive = true; r.ld = m.ld; r.buf = [{ t: now() - 200, p: m.p, y: m.y || 0, x: 0, c: 0, g: 1 }]; r.rp.set(m.p[0], m.p[1], m.p[2]);
+      r.alive = true; r.ld = m.ld; r.emote = null; r.buf = [{ t: now() - 200, p: m.p, y: m.y || 0, x: 0, c: 0, g: 1 }]; r.rp.set(m.p[0], m.p[1], m.p[2]);
       if (MATCH.mode === 'gun') r.w = GUN_LADDER[clamp(m.g | 0, 0, GUN_LADDER.length - 1)]; else if (m.ld) r.w = m.ld.p;
       r.ghost = !!(m.ld && m.ld.k && m.ld.k.includes('ghost') && MATCH.mode !== 'gun');
       break;
     }
+    case 'em': { const r = REMOTES.get(m.i); if (r) { r.emote = isEmote(m.e) ? { id: m.e, t0: now() } : null; if (!r.emote) resetPose(r.model); } break; }
     case 'nd': spawnNade(m); break;
     case 'pj': {
       if (m.o === MY.id) break; recEvent({ k: 'sh', i: m.o, w: m.k === 'bolt' ? 'xbow' : 'rpg', o: m.p, e: [] }); spawnProj(m, false); SFX.shot(m.k === 'bolt' ? 'xbow' : 'rpg', { x: m.p[0], y: m.p[1], z: m.p[2] });
@@ -1997,7 +2000,7 @@ function onKill(m) {
   feed(self ? `<span style="color:${colorOf(m.v)}">${esc(vn)}</span><i>${esc(WNAME(m.w))}</i>` :
     `<span style="color:${colorOf(m.k)}">${esc(kn)}</span><i>${esc(WNAME(m.w))}${m.hd ? ' · headshot' : ''}</i><span style="color:${colorOf(m.v)}">${esc(vn)}</span>`);
   if (m.v === MY.id) die(m.k, m.w);
-  else { const r = REMOTES.get(m.v); if (r && r.alive) { r.alive = false; burst(r.rp.x, r.rp.y, r.rp.z, r.color, 30, 5, r.rp.y); r.model.visible = false; } }
+  else { const r = REMOTES.get(m.v); if (r) r.emote = null; if (r && r.alive) { r.alive = false; burst(r.rp.x, r.rp.y, r.rp.z, r.color, 30, 5, r.rp.y); r.model.visible = false; } }
   if (m.k === MY.id && !self) {
     hitmarker(true); SFX.kill(); MY.streak = m.ks;
     const t = now(); HUD.multi = t - HUD.lastKill < 4000 ? HUD.multi + 1 : 1; HUD.lastKill = t;
@@ -2051,7 +2054,7 @@ function doSpawn(m) {
   applyLoadout(m.ld, m.g); $('death').hidden = true; spawnAsked = 0; LP.onGround = false;
 }
 function die(killer, w) {
-  LP.alive = false; LP.deadAt = now(); LP.killer = killer; LP.reloading = false; LP.cookAt = 0; LP.adsT = 0; MY.streak = 0; MOUSE.l = false;
+  stopEmote(false); LP.alive = false; LP.deadAt = now(); LP.killer = killer; LP.reloading = false; LP.cookAt = 0; LP.adsT = 0; MY.streak = 0; MOUSE.l = false;
   const d = $('death'); d.hidden = false;
   d.querySelector('.who').textContent = killer === MY.id ? 'You died' : 'Killed by ' + nameOf(killer);
   d.querySelector('.how').textContent = killer === MY.id ? WNAME(w) : 'with ' + WNAME(w);
@@ -2073,7 +2076,7 @@ function netFrame(dt) {
 function resetState() {
   for (const id of [...REMOTES.keys()]) removeRemote(id);
   ROSTER.clear(); H.players.clear(); H.timers.length = 0; H.nuke = null; NET.links.clear(); NET.bcLinks.clear(); NET.pending.clear();
-  UAVS.clear(); AIRS.length = 0; NUKE = null; for (const id of [...NADES.keys()]) removeNade(id); for (const id of [...PROJ.keys()]) removeProj(id); stopKillcam(false); REC.frames.length = REC.events.length = 0; H.rk.clear(); BOTCFG.n = 0;
+  UAVS.clear(); AIRS.length = 0; NUKE = null; for (const id of [...NADES.keys()]) removeNade(id); for (const id of [...PROJ.keys()]) removeProj(id); stopKillcam(false); stopEmote(false); REC.frames.length = REC.events.length = 0; H.rk.clear(); BOTCFG.n = 0;
   MY.ks = { uav: 0, air: 0, nuke: 0 }; MY.streak = 0; NET.link = null; NET.code = ''; NET.online = ''; NET.ping = 0; NET.solo = false;
 }
 function leaveGame(quiet) {
@@ -2666,7 +2669,8 @@ function renderSettings(el) {
     + row('Killcams <span class="muted">(the match-winning kill always plays)</span>', `<input type="checkbox" data-k="killcam" ${SET.killcam !== false ? 'checked' : ''}>`)
     + row('Shadows', `<input type="checkbox" data-k="shadows" ${SET.shadows ? 'checked' : ''}>`)
     + row('Show FPS', `<input type="checkbox" data-k="fps" ${SET.fps ? 'checked' : ''}>`)
-    + '<p class="muted">If the game stutters, lower the render resolution or turn off shadows.</p>';
+    + '<p class="muted">If the game stutters, lower the render resolution or turn off shadows.</p>' + `<div id="${el.id === 'mSettings' ? 'mEmotes' : 'pEmotes'}"></div>`;
+  rerenderEmotes();
   el.querySelectorAll('[data-k]').forEach(inp => inp.addEventListener(inp.type === 'checkbox' ? 'change' : 'input', () => {
     const k = inp.dataset.k; SET[k] = inp.type === 'checkbox' ? inp.checked : +inp.value; saveSettings();
     const o = el.querySelector(`[data-o="${k}"]`); if (o) o.textContent = k === 'vol' ? Math.round(SET.vol * 100) : k === 'scale' ? Math.round(SET.scale * 100) + '%' : SET[k];
@@ -2735,6 +2739,7 @@ addEventListener('mousemove', e => {
   const dx = clamp(e.movementX, -300, 300), dy = clamp(e.movementY, -300, 300);
   MOUSE.sdx = (MOUSE.sdx || 0) + dx; MOUSE.sdy = (MOUSE.sdy || 0) + dy;
   if (!LP.alive) return;
+  if (EMO.id) { EMO.orbit -= dx * s; return; } // while emoting the mouse orbits the camera
   LP.yaw -= dx * s; LP.pitch = clamp(LP.pitch - dy * s, -1.55, 1.55);
   if (dy > 0 && LP.recoilPool > 0) LP.recoilPool = Math.max(0, LP.recoilPool - dy * s); // pulling down counts as recovery
 });
@@ -2756,6 +2761,8 @@ addEventListener('keydown', e => {
   if (e.repeat) return;
   KEYS[e.code] = true;
   if (!LP.alive) return;
+  const em = emoteForKey(e.code); if (em) { if (EMO.id === em) stopEmote(); else startEmote(em); return; }
+  if (EMO.id && ['KeyR', 'Digit1', 'Digit2', 'KeyV', 'KeyF', 'KeyG', 'KeyQ', 'Digit4', 'Digit5', 'Digit6'].includes(e.code)) stopEmote();
   switch (e.code) {
     case 'KeyC': KEYS._cEdge = true; break;
     case 'KeyR': startReload(); break;
@@ -2886,10 +2893,10 @@ function updateKillcam(raw) {
       const s = r.id === KC.killer ? null : kcFrameState(KC.t, r.id);
       if (!s) { r.model.visible = false; continue; }
       r.model.visible = true; r.model.position.set(s[1], s[2], s[3]); r.model.rotation.y = s[4]; r.model.userData.tag.visible = false;
-      posePlayer(r.model, s[5], 0, s[6], KC.t / 1000, false); setPlayerGun(r.model, s[7]);
+      posePlayer(r.model, s[5], 0, s[6], KC.t / 1000, false); resetPose(r.model); setPlayerGun(r.model, s[7]);
     }
     const me = KC.killer === MY.id ? null : kcFrameState(KC.t, MY.id);
-    KC.self.visible = !!me; if (me) { KC.self.position.set(me[1], me[2], me[3]); KC.self.rotation.y = me[4]; posePlayer(KC.self, me[5], 0, me[6], KC.t / 1000, false); setPlayerGun(KC.self, me[7]); }
+    KC.self.visible = !!me; if (me) { KC.self.position.set(me[1], me[2], me[3]); KC.self.rotation.y = me[4]; posePlayer(KC.self, me[5], 0, me[6], KC.t / 1000, false); resetPose(KC.self); setPlayerGun(KC.self, me[7]); }
     let fi = REC.frames.length - 1; while (fi > 0 && REC.frames[fi].t > KC.t) fi--;
     const ob = (REC.frames[fi] && REC.frames[fi].ob) || []; ob.forEach((o, i) => kcObj(i, o[0]).position.set(o[1], o[2], o[3])); for (let i = ob.length; i < KC.objs.length; i++) KC.objs[i].visible = false;
     // the camera rides in the killer's eyes
@@ -2919,8 +2926,9 @@ function updateKillcam(raw) {
   if (now() > KC.faceUntil || (r && !r.alive) || (!r && KC.killer !== MY.id)) { stopKillcam(); return; }
   let px, py, pz, yaw, crouch;
   if (r) { px = r.rp.x; py = r.rp.y; pz = r.rp.z; yaw = r.yaw; crouch = r.rc; r.model.userData.tag.visible = true; }
-  else { px = LP.pos.x; py = LP.pos.y; pz = LP.pos.z; yaw = LP.yaw; crouch = LP.crouchK; KC.self.visible = true; KC.self.position.set(px, py, pz); KC.self.rotation.y = yaw; posePlayer(KC.self, LP.pitch, 0, crouch, now() / 1000, !LP.onGround); setPlayerGun(KC.self, curW()); }
-  const fx = -Math.sin(yaw), fz = -Math.cos(yaw), head = py + 1.45 - 0.36 * crouch;
+  else { px = LP.pos.x; py = LP.pos.y; pz = LP.pos.z; yaw = LP.yaw; crouch = LP.crouchK; KC.self.visible = true; KC.self.position.set(px, py, pz); KC.self.rotation.y = yaw; posePlayer(KC.self, LP.pitch, 0, crouch, now() / 1000, !LP.onGround); resetPose(KC.self); setPlayerGun(KC.self, curW()); if (EMO.id) poseEmote(KC.self, EMO.id, (now() - EMO.t0) / 1000); }
+  const humping = r ? r.emote && r.emote.id === 'hump' : EMO.id === 'hump'; if (humping) yaw += Math.PI / 2; // side-on reads better
+  const fx = -Math.sin(yaw), fz = -Math.cos(yaw), head = py + (humping ? 0.7 : 1.45 - 0.36 * crouch);
   // pull back if a wall is in the way
   let d = 3.2; for (; d > 1.2; d -= 0.4) if (lineClear(px, head, pz, px + fx * d, head + 0.25, pz + fz * d)) break;
   _kv.set(px + fx * d, head + 0.25, pz + fz * d); if (KC.camFresh) { KC.camPos.copy(_kv); KC.camFresh = false; } else KC.camPos.lerp(_kv, Math.min(1, raw * 8));
@@ -2944,6 +2952,125 @@ function killcamOnKill(m) {
     setTimeout(() => { LP.kcPend = false; if (inGame && !LP.alive) startKillcam(m.k, m.v, killT, false, afterOwnKillcam); }, 600);
   }
 }
+
+// ============================================================================
+// Emotes. Silent, bound to keys (7, 8, 9, 0 by default, rebindable in
+// Settings). While you emote your camera swings out in front of you; moving,
+// shooting, aiming or taking damage cancels it. Everyone else sees it on your
+// model, including the player you just killed in their killcam.
+// ============================================================================
+const EMOTES = {
+  dab:    { name: 'Dab', dur: 1.8 },
+  teabag: { name: 'Teabag', dur: 8, loop: true },
+  hump:   { name: 'Hump', dur: 8, loop: true },
+};
+const EMOTE_SLOTS = 4, EMOTE_COOLDOWN = 1000;
+const DEFAULT_EMOTE_KEYS = [{ e: 'dab', k: 'Digit7' }, { e: 'teabag', k: 'Digit8' }, { e: 'hump', k: 'Digit9' }, { e: '', k: 'Digit0' }];
+// Keys the game already uses; an emote slot can't take these.
+const RESERVED_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'ShiftRight', 'KeyC', 'KeyR', 'Digit1', 'Digit2', 'KeyV', 'KeyF', 'KeyG', 'KeyQ', 'Digit4', 'Digit5', 'Digit6', 'Tab', 'Escape']);
+SET.emotes = (Array.isArray(SET.emotes) ? SET.emotes : []).slice(0, EMOTE_SLOTS);
+for (let i = 0; i < EMOTE_SLOTS; i++) {
+  const d = DEFAULT_EMOTE_KEYS[i], s = SET.emotes[i] || {};
+  SET.emotes[i] = { e: s.e === '' || EMOTES[s.e] ? s.e : d.e, k: typeof s.k === 'string' && !RESERVED_KEYS.has(s.k) ? s.k : d.k };
+}
+const keyLabel = c => c.startsWith('Digit') ? c.slice(5) : c.startsWith('Key') ? c.slice(3) : c.startsWith('Numpad') ? 'Num ' + c.slice(6) : c.replace(/Left|Right/, '');
+
+// Pose a player model for an emote, on top of the normal pose. t: seconds since it started.
+function poseEmote(model, id, t) {
+  const u = model.userData; u.gunHold.visible = false;
+  if (id === 'dab') {
+    const k = clamp(t / 0.18, 0, 1); // snap into it
+    u.armL.rotation.set(0, 0, lerp(-0.45, -2.35, k));          // left arm flung up and out
+    u.armR.rotation.set(lerp(1.35, 0.35, k), 0, lerp(0.1, -1.95, k)); // right arm folded across the face
+    u.head.rotation.set(0.55 * k, 0, 0.35 * k); u.torso.rotation.z = 0.18 * k; u.torso.rotation.x = 0.1 * k;
+    u.hipL.rotation.x = 0.15 * k; u.hipR.rotation.x = -0.1 * k;
+  } else if (id === 'teabag') {
+    const down = Math.sin(t * 13) > 0 ? 1 : 0, c = lerp(0, 1, down);
+    u.body.position.y = -0.55 * c; u.hipL.rotation.x = -1.0 * c; u.hipR.rotation.x = -1.0 * c; u.hipL.position.z = u.hipR.position.z = 0.15 * c;
+    u.torso.rotation.x = -0.15 * c; u.armL.rotation.set(0.3, 0, -0.45); u.armR.rotation.set(0.3, 0, 0.1); u.head.rotation.x = -0.2;
+  } else if (id === 'hump') {
+    // face down on the ground, thrusting
+    const th = Math.max(0, Math.sin(t * 11));
+    u.body.rotation.set(-Math.PI / 2, 0, 0); u.body.position.set(0, 0.3 + 0.12 * th, 0.95);
+    u.hipL.rotation.x = u.hipR.rotation.x = 0.05; u.hipL.position.z = u.hipR.position.z = 0;
+    u.torso.rotation.x = -0.12 * th; u.armL.rotation.set(1.57, 0, -0.25); u.armR.rotation.set(1.57, 0, 0.25); u.head.rotation.x = -0.6;
+  }
+}
+function resetPose(model) {
+  const u = model.userData; u.gunHold.visible = true;
+  u.body.rotation.set(0, 0, 0); u.body.position.set(0, u.body.position.y, 0);
+  u.armR.rotation.y = 0; u.armR.rotation.z = 0.1; u.armL.rotation.y = 0; u.armL.rotation.z = -0.45;
+  u.head.rotation.z = 0; u.torso.rotation.z = 0;
+}
+
+// ---- you ----
+const EMO = { id: null, t0: 0, until: 0, cool: 0, orbit: 0, self: null, selfKey: '', cam: new THREE.Vector3(), fresh: true };
+function startEmote(id) {
+  if (!isEmote(id) || !LP.alive || now() < EMO.cool) return;
+  if (!LP.onGround || Math.hypot(LP.vel.x, LP.vel.z) > 1 || LP.meleeT > 0 || LP.cookAt) return;
+  LP.reloading = false; LP.reloadT = 0; LP.burstLeft = 0;
+  EMO.id = id; EMO.t0 = now(); EMO.until = now() + EMOTES[id].dur * 1000; EMO.orbit = id === 'hump' ? Math.PI / 2 : 0.35; EMO.fresh = true; // side-on for the hump
+  LP.adsT = 0; LP.crouching = false; MOUSE.l = MOUSE.r = false;
+  const key = MY.color + '|' + MY.name;
+  if (!EMO.self || EMO.selfKey !== key) { if (EMO.self) scene.remove(EMO.self); EMO.self = buildPlayer(MY.color, MY.name); EMO.self.userData.tag.visible = false; scene.add(EMO.self); EMO.selfKey = key; }
+  toHost({ t: 'em', e: id });
+}
+function stopEmote(send = true) {
+  if (!EMO.id) return;
+  EMO.id = null; EMO.cool = now() + EMOTE_COOLDOWN; if (EMO.self) EMO.self.visible = false;
+  if (send && NET.role) toHost({ t: 'em', e: null });
+}
+const _ec = new THREE.Vector3();
+function updateEmote(dt) {
+  if (!EMO.id) { if (EMO.self) EMO.self.visible = false; return; }
+  const moving = KEYS.KeyW || KEYS.KeyA || KEYS.KeyS || KEYS.KeyD || KEYS.Space || KEYS.KeyC;
+  if (!LP.alive || moving || MOUSE.l || MOUSE.r || now() > EMO.until) { stopEmote(); return; }
+  if (KC.on) { if (EMO.self) EMO.self.visible = false; return; } // the killcam owns the camera (and shows you)
+  const t = (now() - EMO.t0) / 1000, m = EMO.self;
+  m.visible = true; m.position.copy(LP.pos); m.rotation.y = LP.yaw;
+  posePlayer(m, 0, 0, 0, t, false); resetPose(m); setPlayerGun(m, curW()); poseEmote(m, EMO.id, t);
+  // camera out in front of you, orbiting with the mouse; pulled in if a wall is in the way
+  const a = LP.yaw + EMO.orbit, fx = -Math.sin(a), fz = -Math.cos(a), head = LP.pos.y + (EMO.id === 'hump' ? 0.6 : 1.4);
+  let d = 3.4; for (; d > 1.2; d -= 0.3) if (lineClear(LP.pos.x, head, LP.pos.z, LP.pos.x + fx * d, head + 0.5, LP.pos.z + fz * d)) break;
+  _ec.set(LP.pos.x + fx * d, head + 0.5, LP.pos.z + fz * d);
+  if (EMO.fresh) { EMO.cam.copy(_ec); EMO.fresh = false; } else EMO.cam.lerp(_ec, Math.min(1, dt * 10));
+  camera.position.copy(EMO.cam); camera.lookAt(LP.pos.x, head - 0.3, LP.pos.z);
+  if (Math.abs(camera.fov - 75) > 0.01) { camera.fov = 75; camera.updateProjectionMatrix(); }
+  VM.holder.visible = false; drawCrosshair($('xcan'), null, 0);
+}
+
+// ---- everyone else ----
+function remoteEmote(r, dt) {
+  const e = r.emote; if (!e) return false;
+  const t = (now() - e.t0) / 1000;
+  if (t > EMOTES[e.id].dur + 0.5) { r.emote = null; resetPose(r.model); return false; } // the emoter's own stop message normally ends it
+  resetPose(r.model); poseEmote(r.model, e.id, t); return true;
+}
+
+// ---- settings: which emote sits in each slot, and its key ----
+let emoteBinding = -1;
+function renderEmoteSettings(el) {
+  el.innerHTML = `<h3>Emotes</h3><p class="muted">Press a slot's key while standing still to emote. Click a key to rebind it, then press the new key.</p>` +
+    SET.emotes.map((s, i) => `<label class="set"><span>Slot ${i + 1}</span><span class="row" style="gap:8px">
+      <select data-es="${i}"><option value="" ${!s.e ? 'selected' : ''}>(empty)</option>${Object.keys(EMOTES).map(k => `<option value="${k}" ${s.e === k ? 'selected' : ''}>${EMOTES[k].name}</option>`).join('')}</select>
+      <button class="btn" data-ek="${i}" style="min-width:110px;padding:7px 10px">${emoteBinding === i ? 'Press a key…' : esc(keyLabel(s.k))}</button></span></label>`).join('') +
+    `<p class="muted" id="${el.id}-emsg"></p>`;
+  el.querySelectorAll('[data-es]').forEach(sel => sel.onchange = () => { SET.emotes[+sel.dataset.es].e = sel.value; saveSettings(); rerenderEmotes(); });
+  el.querySelectorAll('[data-ek]').forEach(b => b.onclick = () => { emoteBinding = +b.dataset.ek; rerenderEmotes(); });
+}
+function rerenderEmotes() { for (const id of ['mEmotes', 'pEmotes']) if ($(id)) renderEmoteSettings($(id)); }
+addEventListener('keydown', e => {
+  if (emoteBinding < 0) return;
+  if (!['mEmotes', 'pEmotes'].some(id => $(id) && $(id).offsetParent)) { emoteBinding = -1; rerenderEmotes(); return; } // panel closed: drop the rebind
+  e.preventDefault(); e.stopImmediatePropagation();
+  const i = emoteBinding, msg = t => { for (const id of ['mEmotes', 'pEmotes']) { const m = $(id + '-emsg'); if (m) m.textContent = t; } };
+  if (e.code === 'Escape') { emoteBinding = -1; rerenderEmotes(); return; }
+  if (RESERVED_KEYS.has(e.code)) { msg(keyLabel(e.code) + ' is already used by the game. Pick another key.'); return; }
+  SET.emotes.forEach((s, j) => { if (j !== i && s.k === e.code) s.k = SET.emotes[i].k; }); // swap if another slot had it
+  SET.emotes[i].k = e.code; emoteBinding = -1; saveSettings(); rerenderEmotes();
+}, true);
+const isEmote = id => typeof id === 'string' && Object.prototype.hasOwnProperty.call(EMOTES, id);
+function emoteForKey(code) { const s = SET.emotes.find(s => s.k === code && s.e); return s ? s.e : null; }
 
 // ============================================================================
 // Main loop.
@@ -2981,7 +3108,7 @@ function updateRemotes(dt) {
     m.position.copy(r.rp); m.rotation.y = yaw;
     posePlayer(m, pitch, r.speed, r.rc, t, !g);
     if (r.meleeT > 0) { r.meleeT -= dt; m.userData.armR.rotation.x = 2.2; }
-    setPlayerGun(m, r.w);
+    setPlayerGun(m, r.w); resetPose(m); remoteEmote(r, dt);
     if (g && r.speed > 3.2 && !c) { r.stepAcc += r.speed * dt; if (r.stepAcc > 2.3) { r.stepAcc = 0; SFX.step(r.rp, 0.3); } }
     r.tagT -= dt;
     if (r.tagT <= 0) {
@@ -2989,7 +3116,7 @@ function updateRemotes(dt) {
       r.tagVis = e.distanceTo(_hv) < 70 && lineClear(e.x, e.y, e.z, _hv.x, _hv.y, _hv.z) && !smokeBlocks(e.x, e.y, e.z, _hv.x, _hv.y, _hv.z);
     }
     m.userData.tag.visible = !!r.tagVis;
-    m.userData.tag.position.y = 2.25 - 0.36 * r.rc;
+    m.userData.tag.position.y = r.emote && r.emote.id === 'hump' ? 1.2 : 2.25 - 0.36 * r.rc;
   }
 }
 function updateAirs(dt) {
@@ -3052,7 +3179,7 @@ function frame() {
     LP.stunT = Math.max(0, LP.stunT - dt);
     updateBots(dt); updateRemotes(dt); updateNades(raw); updateProj(raw); updateAirs(dt); updateMannequins(dt); // grenade fuses run on wall-clock time so every screen agrees
     netFrame(dt); if (NET.role === 'host') hostTick();
-    updateCamera(dt); updateViewmodel(dt); updateHUD(dt); recordFrame(dt);
+    updateCamera(dt); updateViewmodel(dt); updateHUD(dt); recordFrame(dt); updateEmote(dt);
     if (KC.on) { VM.holder.visible = false; drawCrosshair($('xcan'), null, 0); updateKillcam(raw); }
     MOUSE.sdx = MOUSE.sdy = 0;
   } else menuCamera(dt);
