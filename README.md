@@ -15,7 +15,8 @@ Players find each other through the free public PeerJS server, then connect dire
 
 ## Features
 
-- Nuketown-style cul-de-sac: two houses with stairs and garages, a walk-through school bus, trampolines
+- Two maps, picked by the host: **Cul-de-sac** (Nuketown-style: two houses with stairs and garages, a walk-through school bus, trampolines) and **Depot** (an indoor warehouse with shelving aisles, catwalks, offices and a loading dock; close quarters)
+- Mantling: jump at a ledge, fence, car or window while holding W to climb onto or over it. Jump pads launch you onto the bus, the garage roofs and Depot's catwalks. The host can switch both off.
 - Free-for-all and Gun Game (14 weapons, finish with the knife)
 - Bots: the host adds up to five (Easy, Normal or Hard). They use the stairs, hunt, strafe and fill empty slots; one steps aside when a friend joins. Play offline to fight them without internet.
 - 13 guns: assault rifle, burst rifle, SMG, LMG, marksman rifle, sniper, shotgun, crossbow, pistol, machine pistol, revolver, akimbo pistols, rocket launcher
@@ -31,7 +32,7 @@ Players find each other through the free public PeerJS server, then connect dire
 
 ## Controls
 
-WASD move · Mouse look, left click fire, right click aim · Shift sprint · Space jump · C crouch / slide · R reload · 1 / 2 / wheel switch weapon · V knife · G lethal (hold to cook a frag) · Q tactical · 3 / 4 / 5 / 6 killstreaks · 7 / 8 / 9 / 0 emotes · Tab scoreboard · Esc menu
+WASD move · Mouse look, left click fire, right click aim · Shift sprint · Space jump (hold W at a ledge to mantle) · C crouch / slide · R reload · 1 / 2 / wheel switch weapon · V knife · G lethal (hold to cook a frag) · Q tactical · 3 / 4 / 5 / 6 killstreaks · 7 / 8 / 9 / 0 emotes · Tab scoreboard · Esc menu
 
 ## Credits
 
