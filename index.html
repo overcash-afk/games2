@@ -113,7 +113,7 @@ kbd{font-family:var(--display);font-weight:700;background:rgba(255,255,255,.1);b
 #death .who{font-size:28px;font-weight:700;letter-spacing:.06em}
 #death .how{font-size:14px;color:#c9d2de;font-family:var(--body)}
 #death .when{font-size:16px;margin-top:8px;color:var(--accent);letter-spacing:.1em}
-#board{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(620px,92vw);background:rgba(10,13,19,.88);border:1px solid var(--line);border-radius:12px;padding:16px 18px;font-family:var(--body)}
+#board{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(760px,94vw);max-height:92vh;overflow:auto;background:rgba(10,13,19,.88);border:1px solid var(--line);border-radius:12px;padding:16px 18px;font-family:var(--body)}
 #board h2{text-align:center}
 #board table{width:100%;border-collapse:collapse;font-size:15px}
 #board th{font-family:var(--display);font-size:12px;letter-spacing:.14em;color:var(--muted);text-align:right;padding:6px 8px;font-weight:700}
@@ -122,6 +122,17 @@ kbd{font-family:var(--display);font-weight:700;background:rgba(255,255,255,.1);b
 #board tr.me td{background:rgba(255,176,32,.12)}
 #board .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:8px;vertical-align:middle}
 #board .foot{margin-top:10px;font-size:13px;color:var(--muted);text-align:center}
+#board .awards{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:6px 0 12px}
+#board .award{background:rgba(255,176,32,.1);border:1px solid rgba(255,176,32,.35);border-radius:9px;padding:6px 10px;text-align:center;min-width:96px}
+#board .award b{display:block;font-family:var(--display);font-size:11px;letter-spacing:.14em;color:var(--accent);text-transform:uppercase}
+#board .award span{display:block;font-weight:700;font-size:15px}
+#board .award i{display:block;font-style:normal;font-size:11px;color:var(--muted)}
+#board .mycard{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+@media (max-width:640px){#board .mycard{grid-template-columns:1fr 1fr}}
+#board .mycard div{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:9px;padding:8px 10px}
+#board .mycard span{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+#board .mycard b{display:block;font-size:17px;margin-top:2px}
+#board .mycard i{display:block;font-style:normal;font-size:11px;color:var(--muted)}
 #nuke{position:absolute;left:50%;top:22%;transform:translateX(-50%);font-size:22px;color:#ff5a5a;letter-spacing:.12em;text-align:center;font-weight:700}
 #nuke b{font-size:56px;display:block}
 #codetag{position:absolute;right:16px;top:auto;bottom:150px;font-size:13px;letter-spacing:.1em;color:#dfe6ef;opacity:.8}
@@ -1576,7 +1587,7 @@ const MY = { id: 0, name: 'Player', color: '#3c8ce8', ks: { uav: 0, air: 0, nuke
 const REMOTES = new Map();
 const ROSTER = new Map();
 const MATCH = { mode: 'ffa', limit: 25, time: 10, state: 'warmup', endAt: 0, winner: 0, cdEnd: 0 };
-const UAVS = new Map(); const AIRS = []; let NUKE = null;
+const UAVS = new Map(); const AIRS = []; let NUKE = null; let STATS = null;
 const CODE_ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function randCode(n = 6) { let s = ''; const r = new Uint32Array(n); crypto.getRandomValues(r); for (const v of r) s += CODE_ALPHA[v % CODE_ALPHA.length]; return s; }
 function peerCfg() {
@@ -1593,8 +1604,10 @@ function peerErr(e) {
 
 // ============================ HOST ============================
 const H = { players: new Map(), timers: [], nuke: null, rk: new Map() };
+// Per-match numbers for the stats screen; the host keeps them for everyone (bots too).
+const freshStats = () => ({ shots: 0, hits: 0, hs: 0, dmg: 0, best: 0, kw: {}, by: {}, vic: {} });
 function newRecord(id, name, color) {
-  return { id, name, color, p: [0, 0, 0], alive: false, hp: HP_MAX, lastHurt: 0, protect: 0, ld: PRESETS[0], perks: new Set(), k: 0, d: 0, streak: 0, gg: 0, ks: { uav: 0, air: 0, nuke: 0 }, deathAt: 0, fireAt: 0, joined: now(), c: 0 };
+  return { st: freshStats(), id, name, color, p: [0, 0, 0], alive: false, hp: HP_MAX, lastHurt: 0, protect: 0, ld: PRESETS[0], perks: new Set(), k: 0, d: 0, streak: 0, gg: 0, ks: { uav: 0, air: 0, nuke: 0 }, deathAt: 0, fireAt: 0, joined: now(), c: 0 };
 }
 function hostGame(opts) {
   resetState(); NET.role = 'host'; NET.solo = !!opts.solo;
@@ -1690,11 +1703,12 @@ function hostRecv(pid, m) {
       const w = W[m.w]; if (!w || !vec3(m.o)) return;
       if (!m.nf) bcast({ t: 'sh', i: pid, w: m.w, o: m.o, e: Array.isArray(m.e) ? m.e.slice(0, 10).filter(vec3) : [] }, true, pid);
       const cap = w.melee ? 200 : w.dmg[0] * (w.head || 1) * (w.pellets || 1) + 1;
+      if (!w.melee) { const hit = (Array.isArray(m.h) ? m.h : []).some(h => { const T = H.players.get(h[0]); return T && T !== P && T.alive && now() >= T.protect; }); if (!m.nf) P.st.shots++; if (hit && P.st.hits < P.st.shots) P.st.hits++; } // a crossbow hit (nf) was already counted as a shot
       for (const h of (Array.isArray(m.h) ? m.h : [])) { const T = H.players.get(h[0]); if (T && T.id !== pid) applyDamage(T, P, clamp(+h[1] || 0, 0, cap), m.w, !!h[2], P.p); }
       break;
     }
     case 'nd': if ((!LETHALS[m.k] && !TACTICALS[m.k]) || !vec3(m.p) || !vec3(m.v) || !Number.isFinite(m.f) || (pid !== MY.id && NADES.has(m.id))) return; m.o = pid; P.protect = 0; bcast(m, false, pid); break;
-    case 'pj': if ((m.k !== 'bolt' && m.k !== 'rocket') || !vec3(m.p) || !vec3(m.v) || !P.alive) return; m.o = pid; P.protect = 0; P.fireAt = now(); bcast(m, false, pid); break;
+    case 'pj': if ((m.k !== 'bolt' && m.k !== 'rocket') || !vec3(m.p) || !vec3(m.v) || !P.alive) return; P.st.shots++; m.o = pid; P.protect = 0; P.fireAt = now(); bcast(m, false, pid); break;
     case 'pjx': if (vec3(m.p)) bcast({ t: 'pjx', id: m.id, p: m.p }, true, pid); break;
     case 'rk': { const key = pid + '/' + m.id; if (!vec3(m.p) || H.rk.has(key)) return; H.rk.set(key, now()); if (H.rk.size > 200) for (const [k, t] of H.rk) if (now() - t > 15000) H.rk.delete(k); hostBlast(pid, m.p, W.rpg.r, W.rpg.dmg[0], 'rpg', m.id, 'rocket'); break; }
     case 'spawnReq': hostSpawn(P, m.ld, !!m.keep); break;
@@ -1710,7 +1724,8 @@ function applyDamage(T, A, d, w, head, src) {
   if (!T.alive || MATCH.state === 'end' || MATCH.state === 'countdown' || now() < T.protect || d <= 0) return;
   const explosive = w === 'frag' || w === 'semtex' || w === 'airstrike' || w === 'rpg';
   if (explosive && T.perks.has('flak')) d *= 0.5;
-  T.hp = hpNow(T) - d; T.lastHurt = now();
+  const before = hpNow(T); T.hp = before - d; T.lastHurt = now();
+  if (A && A !== T) A.st.dmg += Math.min(d, Math.max(0, before));
   bcast({ t: 'hurt', v: T.id, a: A ? A.id : 0, d: Math.round(d), hp: Math.max(0, Math.round(T.hp)), s: src ? [src[0], src[2]] : null });
   if (T.hp <= 0) hostKill(T, A, w, head);
 }
@@ -1719,7 +1734,7 @@ function hostKill(T, A, w, head) {
   T.alive = false; T.d++; T.streak = 0; T.deathAt = now();
   const suicide = !A || A.id === T.id; let earned = null;
   if (!suicide) {
-    A.k++;
+    A.k++; A.st.kw[w] = (A.st.kw[w] || 0) + 1; if (head) A.st.hs++; A.st.vic[T.id] = (A.st.vic[T.id] || 0) + 1; T.st.by[A.id] = (T.st.by[A.id] || 0) + 1;
     if (MATCH.mode === 'ffa' && w !== 'nuke') { A.streak++; earned = A.bot ? null : checkStreak(A); }
     if (MATCH.mode === 'gun') {
       if (w === 'knife' && GUN_LADDER[A.gg] !== 'knife') T.gg = Math.max(0, T.gg - 1);
@@ -1728,6 +1743,7 @@ function hostKill(T, A, w, head) {
     }
   } else if (MATCH.mode === 'gun') T.gg = Math.max(0, T.gg - 1);
   const gg = MATCH.mode === 'gun' ? { [T.id]: T.gg } : null; if (gg && A) gg[A.id] = A.gg;
+  if (A && !suicide) A.st.best = Math.max(A.st.best, A.streak);
   const fin = MATCH.state === 'live' && !suicide && ((MATCH.mode === 'ffa' && A.k >= MATCH.limit) || (MATCH.mode === 'gun' && A.gg >= GUN_LADDER.length));
   bcast({ t: 'kill', k: suicide ? T.id : A.id, v: T.id, w, hd: head ? 1 : 0, ks: suicide ? 0 : A.streak, gg, fin: fin ? 1 : 0 });
   if (earned) sendTo(A.id, { t: 'ksinv', i: A.id, inv: A.ks, earned });
@@ -1802,20 +1818,27 @@ function hostExplode(n) {
 // An explosion: everyone with a line to the blast takes damage that falls off with distance.
 function hostBlast(owner, p, r, dmg, w, boomId, kind) {
   bcast({ t: 'boom', id: boomId, k: kind, p, o: owner });
-  const A = H.players.get(owner) || null;
+  const A = H.players.get(owner) || null; let hitFoe = false;
   for (const T of H.players.values()) {
     if (!T.alive) continue; const cx = T.p[0], cy = T.p[1] + 1, cz = T.p[2];
     const d = Math.hypot(cx - p[0], cy - p[1], cz - p[2]); if (d > r) continue;
     if (!lineClear(p[0], p[1] + 0.25, p[2], cx, cy, cz) && !lineClear(p[0], p[1] + 0.25, p[2], cx, T.p[1] + 1.6, cz)) continue;
+    if (T !== A && T.alive && now() >= T.protect) hitFoe = true;
     applyDamage(T, A, dmg * Math.pow(1 - d / r, 0.75), w, false, p);
   }
+  if (A && w === 'rpg' && hitFoe && A.st.hits < A.st.shots) A.st.hits++;
+}
+function statsMsg() {
+  const top = o => { let b = null, n = 0; for (const k in o) if (o[k] > n) { n = o[k]; b = k; } return b ? [b, n] : null; };
+  return { t: 'stats', l: [...H.players.values()].map(P => { const s = P.st, best = top(s.kw), nem = top(s.by), vic = top(s.vic);
+    return { id: P.id, k: P.k, d: P.d, shots: s.shots, hits: s.hits, hs: s.hs, dmg: Math.round(s.dmg), best: s.best, gun: best && best[0], gunN: best ? best[1] : 0, nem: nem ? +nem[0] : 0, nemN: nem ? nem[1] : 0, vic: vic ? +vic[0] : 0, vicN: vic ? vic[1] : 0 }; }) };
 }
 function hostStartMatch() {
   if (MATCH.state === 'live' || MATCH.state === 'countdown') return;
   MATCH.state = 'countdown'; MATCH.cdEnd = now() + 5000; MATCH.winner = 0; bcast(matchMsg());
 }
 function hostResetScores() {
-  for (const P of H.players.values()) { P.k = P.d = P.streak = P.gg = 0; P.ks = { uav: 0, air: 0, nuke: 0 }; sendTo(P.id, { t: 'ksinv', i: P.id, inv: P.ks }); }
+  for (const P of H.players.values()) { P.k = P.d = P.streak = P.gg = 0; P.st = freshStats(); P.ks = { uav: 0, air: 0, nuke: 0 }; sendTo(P.id, { t: 'ksinv', i: P.id, inv: P.ks }); }
   H.nuke = null; H.timers.length = 0;
 }
 function hostRespawnAll() {
@@ -1824,7 +1847,7 @@ function hostRespawnAll() {
 }
 function hostEndMatch(winner) {
   if (MATCH.state === 'end') return;
-  MATCH.state = 'end'; MATCH.winner = winner; MATCH.endAt = now() + 12000; H.nuke = null; bcast(matchMsg()); bcast(rosterMsg());
+  MATCH.state = 'end'; MATCH.winner = winner; MATCH.endAt = now() + 20000; H.nuke = null; bcast(statsMsg()); bcast(matchMsg()); bcast(rosterMsg());
 }
 function hostSetMode(mode, limit, time) {
   MATCH.mode = mode; MATCH.limit = limit; MATCH.time = time; MATCH.state = 'warmup'; MATCH.endAt = 0; MATCH.winner = 0;
@@ -1986,6 +2009,7 @@ function clientRecv(m) {
     case 'nukeHit': NUKE = null; SFX.siren(false); HUD.nukeFlash = 3; SFX.boom(null, 2); LP.shake = 2; break;
     case 'match': onMatch(m); break;
     case 'feed': feed(esc(m.msg)); break;
+    case 'stats': { const n = x => Number.isFinite(+x) ? +x : 0; STATS = Array.isArray(m.l) ? m.l.slice(0, 16).map(s => ({ id: n(s.id), k: n(s.k), d: n(s.d), shots: n(s.shots), hits: Math.min(n(s.hits), n(s.shots)), hs: n(s.hs), dmg: Math.round(n(s.dmg)), best: n(s.best), gun: W[s.gun] || s.gun === 'frag' || s.gun === 'semtex' || s.gun === 'airstrike' || s.gun === 'nuke' ? s.gun : null, gunN: n(s.gunN), nem: n(s.nem), nemN: n(s.nemN), vic: n(s.vic), vicN: n(s.vicN) })) : null; break; }
     case 'leave': removeRemote(m.i); break;
     case 'pong': NET.ping = Math.round(now() - m.c); break;
     case 'err': setMenuStatus(m.msg); leaveGame(true); showMenu(); setMenuStatus(m.msg); break;
@@ -2035,7 +2059,7 @@ function onMatch(m) {
   if ((m.state === 'warmup' || m.state === 'countdown') && NUKE) { NUKE = null; SFX.siren(false); }
   if (prev !== m.state) {
     if (m.state === 'countdown') { say('Match starting'); }
-    if (m.state === 'live') { centerMsg('FIGHT!', 'big'); MY.ks = { uav: 0, air: 0, nuke: 0 }; MY.streak = 0; NUKE = null; SFX.siren(false); UAVS.clear(); }
+    if (m.state === 'live') { STATS = null; centerMsg('FIGHT!', 'big'); MY.ks = { uav: 0, air: 0, nuke: 0 }; MY.streak = 0; NUKE = null; SFX.siren(false); UAVS.clear(); }
     if (m.state === 'end') { const w = m.winner; say(w === MY.id ? 'Victory' : 'Defeat'); SFX.siren(false); NUKE = null; }
     if (m.state === 'warmup' && prev === 'end') { MY.ks = { uav: 0, air: 0, nuke: 0 }; UAVS.clear(); }
   }
@@ -2077,7 +2101,7 @@ function resetState() {
   for (const id of [...REMOTES.keys()]) removeRemote(id);
   ROSTER.clear(); H.players.clear(); H.timers.length = 0; H.nuke = null; NET.links.clear(); NET.bcLinks.clear(); NET.pending.clear();
   UAVS.clear(); AIRS.length = 0; NUKE = null; for (const id of [...NADES.keys()]) removeNade(id); for (const id of [...PROJ.keys()]) removeProj(id); stopKillcam(false); stopEmote(false); REC.frames.length = REC.events.length = 0; H.rk.clear(); BOTCFG.n = 0;
-  MY.ks = { uav: 0, air: 0, nuke: 0 }; MY.streak = 0; NET.link = null; NET.code = ''; NET.online = ''; NET.ping = 0; NET.solo = false;
+  MY.ks = { uav: 0, air: 0, nuke: 0 }; MY.streak = 0; STATS = null; NET.link = null; NET.code = ''; NET.online = ''; NET.ping = 0; NET.solo = false;
 }
 function leaveGame(quiet) {
   if (NET.role === 'guest' && NET.link && !quiet) guestSend({ t: 'bye' });
@@ -2260,6 +2284,7 @@ function botFire(P, D, dist) {
     if (res.T) { const hd = res.T.id, h = hits.get(hd) || { d: 0, head: false, T: res.T }; h.d += dmgAt(id, res.t) * (res.head ? w.head : 1); h.head = h.head || res.head; hits.set(hd, h); }
   }
   bcast({ t: 'sh', i: P.id, w: id, o: e.map(r2), e: ends }, true);
+  P.st.shots++; if (hits.size) P.st.hits++; // a bot's rocket counts its hit in hostBlast
   for (const h of hits.values()) applyDamage(h.T, P, h.d, id, h.head, P.p);
   a.mag--; a.fireCD = 60 / w.rpm;
   if (w.burst) { a.burstLeft = a.burstLeft > 0 ? a.burstLeft - 1 : w.burst - 1; if (a.burstLeft <= 0) a.fireCD = w.burstGap + rand(0.05, 0.25); }
@@ -2449,6 +2474,7 @@ function updateHUD(dt) {
   }
   // scoreboard
   const showBoard = (HUD.board || MATCH.state === 'end') && !KC.on; $('board').hidden = !showBoard;
+  $('topbar').style.visibility = showBoard && MATCH.state === 'end' ? 'hidden' : '';
   if (showBoard) renderBoard(rows);
   // misc
   HUD.fpsN++; HUD.fpsT += dt; if (HUD.fpsT > 0.5) { HUD.fps = Math.round(HUD.fpsN / HUD.fpsT); HUD.fpsN = 0; HUD.fpsT = 0; }
@@ -2457,11 +2483,33 @@ function updateHUD(dt) {
   drawMinimap();
 }
 function renderBoard(rows) {
+  if (MATCH.state === 'end' && STATS) return renderStats(rows);
   const gun = MATCH.mode === 'gun';
   const html = `<h2>${MATCH.state === 'end' ? (MATCH.winner === MY.id ? 'Victory' : esc(nameOf(MATCH.winner)) + ' wins') : gun ? 'Gun Game' : 'Free-for-all'}</h2>
     <table><tr><th>Player</th>${gun ? '<th>Weapon</th>' : ''}<th>Kills</th><th>Deaths</th><th>Streak</th></tr>
     ${rows.map(r => `<tr class="${r.id === MY.id ? 'me' : ''}"><td><span class="sw" style="background:${r.c}"></span>${esc(r.n)}${r.b ? '<span class="tag2">BOT</span>' : ''}${r.id === 1 ? ' <span class="muted">host</span>' : ''}</td>${gun ? `<td>${Math.min(r.g + 1, GUN_LADDER.length)} / ${GUN_LADDER.length}</td>` : ''}<td>${r.k}</td><td>${r.d}</td><td>${r.s}</td></tr>`).join('')}</table>
     <div class="foot">${MATCH.state === 'end' ? 'Next warmup in ' + Math.ceil(Math.max(0, MATCH.endAt - now()) / 1000) + ' s' : NET.code ? 'Invite code ' + NET.code : ''}</div>`;
+  if (html !== HUD.lastBoard) { $('board').innerHTML = html; HUD.lastBoard = html; }
+}
+// End-of-match stats: awards, a table for everyone, and your own card.
+function renderStats(rows) {
+  const S = new Map(STATS.map(s => [s.id, s])), nm = id => esc(id === MY.id ? 'You' : nameOf(id));
+  const acc = s => s && s.shots ? Math.round(s.hits / s.shots * 100) : null;
+  const award = (title, pick, val) => { let best = null; for (const r of rows) { const s = S.get(r.id); if (!s) continue; const v = pick(s, r); if (v == null) continue; if (!best || v > best.v) best = { r, v }; } return best ? `<div class="award"><b>${title}</b><span style="color:${best.r.c}">${esc(best.r.id === MY.id ? 'You' : best.r.n)}</span><i>${val(best.v)}</i></div>` : ''; };
+  const awards = award('MVP', (s, r) => r.k * 100 - r.d * 10 + s.dmg / 100, () => 'top score')
+    + award('Sharpshooter', s => s.shots >= 8 ? acc(s) : null, v => v + '% accuracy')
+    + award('Headhunter', s => s.hs || null, v => v + ' headshot kill' + (v > 1 ? 's' : ''))
+    + award('Rampage', s => s.best >= 2 ? s.best : null, v => v + ' in a row')
+    + award('Untouchable', (s, r) => r.k + r.d > 0 ? -r.d : null, v => -v + ' death' + (v === -1 ? '' : 's'));
+  const me = S.get(MY.id), gun = MATCH.mode === 'gun';
+  const html = `<h2>${MATCH.winner === MY.id ? 'Victory' : esc(nameOf(MATCH.winner)) + ' wins'}</h2>
+    <div class="awards">${awards}</div>
+    <table><tr><th>Player</th>${gun ? '<th>Weapon</th>' : ''}<th>K</th><th>D</th><th>Acc</th><th>HS</th><th>Streak</th><th>Best gun</th></tr>
+    ${rows.map(r => { const s = S.get(r.id) || {}; const a = acc(s); return `<tr class="${r.id === MY.id ? 'me' : ''}"><td><span class="sw" style="background:${r.c}"></span>${esc(r.n)}${r.b ? '<span class="tag2">BOT</span>' : ''}</td>${gun ? `<td>${Math.min(r.g + 1, GUN_LADDER.length)} / ${GUN_LADDER.length}</td>` : ''}<td>${r.k}</td><td>${r.d}</td><td>${a == null ? '–' : a + '%'}</td><td>${s.hs || 0}</td><td>${s.best || 0}</td><td>${s.gun ? esc(WNAME(s.gun)) : '–'}</td></tr>`; }).join('')}</table>
+    ${me ? `<div class="mycard"><div><span>Damage dealt</span><b>${me.dmg.toLocaleString()}</b></div><div><span>Accuracy</span><b>${acc(me) == null ? '–' : acc(me) + '%'}</b><i>${me.hits} / ${me.shots} shots</i></div>
+      <div><span>Nemesis</span><b>${me.nem ? `<span style="color:${colorOf(me.nem)}">${nm(me.nem)}</span>` : 'nobody'}</b><i>${me.nem ? 'killed you ' + me.nemN + '×' : 'no one got you twice'}</i></div>
+      <div><span>Favourite victim</span><b>${me.vic ? `<span style="color:${colorOf(me.vic)}">${nm(me.vic)}</span>` : 'nobody'}</b><i>${me.vic ? 'you killed them ' + me.vicN + '×' : ''}</i></div></div>` : ''}
+    <div class="foot">Next warmup in ${Math.ceil(Math.max(0, MATCH.endAt - now()) / 1000)} s</div>`;
   if (html !== HUD.lastBoard) { $('board').innerHTML = html; HUD.lastBoard = html; }
 }
 function drawMinimap() {

@@ -23,6 +23,7 @@ Players find each other through the free public PeerJS server, then connect dire
 - Crosshair tab: style your hip-fire crosshair and each optic's reticle (shape and colour), and set the gun's size and position on screen
 - Five preset classes and three custom classes (primary + optic, secondary + optic, lethal, tactical, two perks)
 - UAV (3 kills), Airstrike (5) and Nuke (15) killstreaks
+- Match stats: after every match, awards (MVP, Sharpshooter, Headhunter, Rampage, Untouchable), everyone's kills, deaths, accuracy, headshots, best streak and favourite gun, plus your damage dealt, nemesis and favourite victim
 - Emotes: Dab, Teabag and Hump on 7, 8 and 9 (slot 0 is free). Rebind keys and slots in Settings. Your camera swings out so you can watch yourself; moving, shooting or getting hit cancels. Everyone sees it, including your victim in their killcam.
 - Killcams: when you die, replay the last few seconds from your killer's eyes (slow motion on the killing shot), then turn to face them for two seconds. Space skips and respawns you at once. The match-winning kill plays for everyone as the final killcam. Turn personal killcams off in Settings.
 - Sliding, bunny-hopping, aim down sights, recoil, cooked grenades, knife
