@@ -153,10 +153,31 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
 #prompt{position:absolute;left:50%;top:32%;transform:translateX(-50%);width:min(360px,calc(100% - 24px));padding:16px;text-align:center;z-index:12;border-color:var(--beer);animation:pop .4s cubic-bezier(.2,1.6,.4,1)}
 #prompt .pe{font-size:40px;line-height:1}
 #prompt .pt{font-family:var(--display);font-size:24px;margin:6px 0 4px}
-#prompt .ps{font-size:14px;color:var(--muted);margin-bottom:12px}
+#prompt .ps{font-size:14px;color:var(--muted);margin-bottom:12px;white-space:pre-line}
+#prompt .pc{font-family:var(--display);font-size:20px;color:var(--beer);margin:-4px 0 12px}
+#cartCtl{position:absolute;left:0;right:0;bottom:0;padding:0 12px calc(12px + var(--safe-b));display:grid;grid-template-columns:auto 1fr auto;grid-template-areas:"l m r";align-items:end;gap:10px;pointer-events:none}
+#cartCtl > *{pointer-events:auto}
+#ccL{grid-area:l}#ccR{grid-area:r}#ccMid{grid-area:m;justify-self:center;padding:8px 12px;text-align:center}
+.cc{display:flex;gap:10px}
+.pedal{width:80px;height:80px;border-radius:20px;border:2px solid rgba(255,255,255,.25);background:rgba(8,22,14,.6);font-size:28px;cursor:pointer;touch-action:none;backdrop-filter:blur(4px)}
+.pedal.on{background:rgba(255,197,61,.4);border-color:var(--accent)}
+.pedal.gas{background:rgba(82,210,115,.28)}
+#cSpeed{font-family:var(--display);font-size:28px;margin-bottom:6px}
+.rulesEd{display:grid;gap:8px}
+.rule{display:grid;grid-template-columns:1.5fr 1.1fr .8fr 1.6fr auto;gap:6px;align-items:center}
+.rule select,.rule input{width:100%;padding:8px;border-radius:10px;border:1px solid var(--line);background:rgba(0,0,0,.3);color:var(--ink);font-size:14px;min-width:0}
+.rule select option{background:#132d20}
+.rule .ib{width:36px;height:36px;font-size:15px}
+.rlist{margin:4px 0 0;padding-left:18px;font-size:14px;line-height:1.6}
+.rlist i{color:var(--beer)}
 #prompt .row{justify-content:center}
 
 @media (max-width:760px){
+  .rule{grid-template-columns:1fr 1fr auto;grid-template-areas:"w w x" "who k k" "txt txt txt";padding-bottom:8px;border-bottom:1px solid var(--line)}
+  .rule [data-f="w"]{grid-area:w}.rule [data-f="who"]{grid-area:who}.rule [data-f="k"]{grid-area:k}.rule input{grid-area:txt}.rule .ib{grid-area:x}
+  #cartCtl{grid-template-areas:"m m m" "l . r";padding:0 8px calc(8px + var(--safe-b))}
+  .pedal{width:62px;height:62px;font-size:24px}
+  .cc{gap:8px}
   #bottom{grid-template-columns:auto 1fr auto;grid-template-areas:"meter meter meter" "drink club swing";gap:6px;padding:0 8px calc(8px + var(--safe-b))}
   #rightCol{display:contents}
   #clubBox{justify-self:center;align-self:end;padding:4px}
@@ -211,6 +232,7 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
   <div id="feed"></div>
   <div id="topR">
     <div id="tbtns">
+      <button class="ib" id="bCart" title="Golf cart (F)">🚗</button>
       <button class="ib" id="bCheers" title="Cheers! (H)">🍻</button>
       <button class="ib" id="bZoom" title="Zoom (Z)">🔭</button>
       <button class="ib" id="bCam" title="Ball cam (C)">🎥</button>
@@ -223,7 +245,12 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
   <div id="banner" hidden><div class="b1" id="bn1"></div><div class="b2" id="bn2"></div></div>
   <button class="btn small" id="skipBtn" hidden>Skip ⏩</button>
   <div id="specBar" class="hcard" hidden><button class="ib" id="specPrev">◀</button><span id="specName">Watching</span><button class="ib" id="specNext">▶</button></div>
-  <div id="prompt" class="hcard" hidden><div class="pe" id="prE">🍺</div><div class="pt" id="prT">Drink!</div><div class="ps" id="prS"></div><div class="row"><button class="btn primary" id="prYes">Done 🍺</button><button class="btn" id="prNo">Skip</button></div></div>
+  <div id="prompt" class="hcard" hidden><div class="pe" id="prE">🍺</div><div class="pt" id="prT">Drink!</div><div class="ps" id="prS"></div><div class="pc" id="prC"></div><div class="row"><button class="btn primary" id="prYes">Done 🍺</button><button class="btn" id="prNo">Skip</button></div></div>
+  <div id="cartCtl" hidden>
+    <div class="cc" id="ccL"><button class="pedal" id="cLeft">◀</button><button class="pedal" id="cRight">▶</button></div>
+    <div id="ccMid" class="hcard"><div id="cSpeed">0 mph</div><div class="row" style="justify-content:center;gap:6px"><button class="btn small" id="cHonk">📯</button><button class="btn small primary" id="cExit">⛳ Back to ball</button></div></div>
+    <div class="cc" id="ccR"><button class="pedal" id="cBrake">▼</button><button class="pedal gas" id="cGas">▲</button></div>
+  </div>
   <div id="bottom">
     <div id="meterWrap" class="hcard">
       <div id="mMsg"></div>
@@ -263,7 +290,7 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
 
 <!-- Lobby -->
 <div class="overlay" id="lobby" hidden>
-  <div class="panel">
+  <div class="panel" style="width:min(700px,100%)">
     <h2>Clubhouse</h2>
     <div id="lobbyCodeBox">
       <div class="muted">Game code</div>
@@ -278,12 +305,14 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
       <div class="row"><b id="courseName" class="grow">—</b><button class="btn small" id="reseedBtn">🎲 New course</button></div>
       <h3>Holes</h3>
       <div class="seg" id="holesSeg"><button data-v="3">3</button><button data-v="9">9</button><button data-v="18">18</button></div>
-      <h3>Drinking prompts</h3>
-      <div class="row"><div class="seg" id="rulesSeg"><button data-v="1">On</button><button data-v="0">Off</button></div><span class="muted">Water, OB, three-putts and blow-ups say drink; birdies make everyone else drink.</span></div>
+      <h3>House rules</h3>
+      <p class="muted" style="margin:0 0 8px">When it happens, the game tells the right people to drink. Write anything in the last box, like "chug while singing".</p>
+      <div id="rulesEd" class="rulesEd"></div>
       <div class="row" style="margin-top:18px"><button class="btn primary grow" id="startBtn">Tee off ⛳</button><button class="btn" id="lobbyLeave">Leave</button></div>
     </div>
     <div id="guestWait" hidden>
       <h3>Course</h3><div><b id="courseNameG">—</b> · <span id="holesG"></span> holes</div>
+      <h3>House rules</h3><div id="rulesList"></div>
       <p class="muted">Waiting for the host to tee off…</p>
       <button class="btn" id="lobbyLeave2">Leave</button>
     </div>
@@ -313,13 +342,14 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
     <div class="row"><span class="grow">Sound</span><div class="seg" id="sndSeg"><button data-v="1">On</button><button data-v="0">Off</button></div></div>
     <div class="row" style="margin-top:8px"><span class="grow">Follow the ball in flight</span><div class="seg" id="camSeg"><button data-v="0">Eyes</button><button data-v="1">Ball cam</button></div></div>
     <div class="row" style="margin-top:8px"><span class="grow">Drunk visuals (blur, double vision)</span><div class="seg" id="fxSeg"><button data-v="1">On</button><button data-v="0">Off</button></div></div>
+    <h3>House rules</h3>
+    <div id="rulesEd2" class="rulesEd"></div>
     <div id="hostPause">
       <h3>Host</h3>
-      <div class="row"><span class="grow">Drinking prompts</span><div class="seg" id="rulesSeg2"><button data-v="1">On</button><button data-v="0">Off</button></div></div>
-      <div class="row" style="margin-top:10px"><button class="btn small" id="skipHoleBtn">End this hole for everyone</button></div>
+      <div class="row"><button class="btn small" id="skipHoleBtn">End this hole for everyone</button></div>
     </div>
     <h3>Controls</h3>
-    <p class="muted">Drag (or A/D, arrow keys) to aim; hold Shift for fine aim. Drag up/down to look. Q/E or the arrows change club. Space or SWING: first press starts the backswing, second sets power, third sets accuracy when the needle comes back to the white line. Too early slices right, too late hooks left. B sips, N takes a shot. Z zooms, C toggles ball cam, Tab shows the scorecard.</p>
+    <p class="muted">Drag (or A/D, arrow keys) to aim; hold Shift for fine aim. Drag up/down to look. Q/E or the arrows change club. Space or SWING: first press starts the backswing, second sets power, third sets accuracy when the needle comes back to the white line. Too early slices right, too late hooks left. B sips, N takes a shot. Z zooms, C toggles ball cam, Tab shows the scorecard. F (or 🚗) jumps in your golf cart: W/S or ▲▼ to drive, A/D or ◀▶ to steer, G honks. Hit a friend standing at their ball to run them over.</p>
     <div class="row" style="margin-top:14px"><button class="btn small" id="pickupBtn">Pick up (take max score)</button><button class="btn danger small" id="leaveBtn">Leave game</button></div>
   </div>
 </div>
