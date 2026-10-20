@@ -1,6 +1,6 @@
 # Tipsy Links
 
-First-person party golf for up to four friends. The more you drink, the farther you hit the ball. There are golf carts, and you can run your friends over.
+First-person party golf for up to four friends. The more you drink, the farther you hit the ball. Funnel a beer on the tee for a golf cart, then run your friends over on the way to your ball.
 
 **Play:** https://overcash-afk.github.io/games2/golf/
 
@@ -24,13 +24,19 @@ Players find each other through the free public PeerJS server, then connect dire
 
 ### House rules
 
-The host sets the drinking rules in the clubhouse, and can change them from the ☰ menu mid-round. Each rule is *when this happens* → *who drinks* (that player, everyone else or everyone) → *sip or shot*, plus optional custom words that show up in the prompt ("waterfall", "chug while singing"…). Triggers: ball in the water, out of bounds, bunker, hitting a tree, shanks, three-putts, double bogey or worse, birdie or better, hole in one, worst or best score on a hole, longest drive on a hole, getting run over, running someone over, driving a cart into water, and the start of every hole. When a rule fires, the right people get a prompt with a **Done** button that logs the drink. Rules are saved in the host's browser for next time; **Defaults** restores the starter set.
+The host sets the drinking rules in the clubhouse, and can change them from the ☰ menu mid-round. Each rule is *when this happens* → *who drinks* (that player, everyone else or everyone) → *sip or shot*, plus optional custom words that show up in the prompt ("waterfall", "chug while singing"…). Triggers: ball in the water, out of bounds, bunker, hitting a tree, shanks, three-putts, double bogey or worse, birdie or better, hole in one, worst or best score on a hole, longest drive on a hole, getting run over, running someone over, driving a cart into water, running into water, tripping, funneling a beer, and the start of every hole. When a rule fires, the right people get a prompt with a **Done** button that logs the drink. Rules are saved in the host's browser for next time; **Defaults** restores the starter set.
 
 For adults of legal drinking age. Pace yourself, drink some water, and nobody drives home.
 
-## Golf carts
+## Getting to your ball: funnel or run
 
-Tap **🚗** (or press F) any time you're lining up a shot or waiting for others: you're in the driver's seat of your cart. Drive with ▲ ▼ ◀ ▶ (or W/A/S/D), honk with 📯 (G). Steering gets loose when you've been drinking. Drive into a friend standing at their ball to **run them over**: they go flying, their swing gets knocked off line, and your house rules decide who drinks. Trees and other carts stop you, and a pond swallows the cart. **⛳ Back to ball** puts you back at your ball. No drinking while driving.
+After every shot you travel to your ball yourself, in first person. A pop-up marker and a beam of light show where your ball is; when it's off screen, the marker sits on the edge of the screen and points the way.
+
+- **Funnel for a cart:** on each tee box you're offered a golf cart for that hole. To get it you funnel a beer: hold **Hold while you funnel** for the whole chug and let go when it's empty (anything under 2 seconds doesn't count). Everyone sees your time, and the final awards include Fastest Funnel. The funnel adds **no shot power**, only the cart. The offer lasts until your tee shot.
+- **With a cart** you drive to your shots (▲ ▼ ◀ ▶ or W/A/S/D, 📯 / G to honk; steering gets loose when you're drunk) and can **run people over**: hit a friend standing at their ball or running to it and they go flying, their swing gets knocked off line, and your house rules decide who drinks. Trees and other carts stop you. Drive into a pond and the cart sinks: you're on foot for the rest of the hole.
+- **Without a cart** you run, at about half a cart's speed. You can't hit anyone, but carts can hit you. Running drunk is messy: your line wanders, you lurch sideways and sometimes trip. Running into a pond counts as a swim.
+- When you're close to your ball, press **⛳ Play shot** (or F). **⏭ Skip** jumps you straight to your ball, but costs a sip.
+- After you hole out you can keep driving or running around the course (🚗 / 🏃 button) while the others finish.
 
 ## How to swing
 
@@ -38,7 +44,7 @@ Tap **🚗** (or press F) any time you're lining up a shot or waiting for others
 - **Club:** the game picks one for you each shot; change it with ◀ ▶, Q/E or the mouse wheel.
 - **Swing:** press SWING (or Space) three times: once to start the backswing, once to set power, and once when the needle comes back to the white line. Too early pushes or slices right, too late pulls or hooks left. Way off tops the ball.
 - Rough costs 18% distance, and bunkers cost 40% (12% with the sand wedge). Water is a one-stroke penalty with a drop beside the hazard; out of bounds is stroke and distance. Putts inside 2 feet are tapped in automatically, and a hole ends for you at par + 4.
-- 🚗 jumps in your golf cart, 🔭 zooms, 🎥 switches between your own eyes and a ball cam during flight, 📋 shows the scorecard, 🍻 sends a cheers to everyone, and ☰ has the invite link, settings and **Pick up**.
+- 🚗 / 🏃 leaves your ball to drive or run around, 🔭 zooms, 🎥 switches between your own eyes and a ball cam during flight, 📋 shows the scorecard, 🍻 sends a cheers to everyone, and ☰ has the invite link, settings and **Pick up**.
 
 ## Files
 

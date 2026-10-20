@@ -162,7 +162,25 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
 .pedal{width:80px;height:80px;border-radius:20px;border:2px solid rgba(255,255,255,.25);background:rgba(8,22,14,.6);font-size:28px;cursor:pointer;touch-action:none;backdrop-filter:blur(4px)}
 .pedal.on{background:rgba(255,197,61,.4);border-color:var(--accent)}
 .pedal.gas{background:rgba(82,210,115,.28)}
-#cSpeed{font-family:var(--display);font-size:28px;margin-bottom:6px}
+#cSpeed{font-family:var(--display);font-size:28px}
+#cDist{font-size:13px;color:var(--muted);font-weight:700;margin-bottom:6px}
+#cExit{animation:pulse 1s ease-in-out infinite alternate}
+@keyframes pulse{from{box-shadow:0 0 0 0 rgba(255,197,61,.6)}to{box-shadow:0 0 0 8px rgba(255,197,61,0)}}
+#funnel{position:absolute;left:50%;top:calc(70px + var(--safe-t));transform:translateX(-50%);width:min(380px,calc(100% - 24px));padding:14px 16px;text-align:center;z-index:11;border-color:var(--beer);display:flex;flex-direction:column;align-items:center;gap:6px}
+#funnel .pe{font-size:34px;line-height:1}#funnel .pt{font-family:var(--display);font-size:22px}#funnel .ps{font-size:13px;color:var(--muted);line-height:1.4}
+#fnTime{font-family:var(--display);font-size:36px;color:var(--beer)}
+#fnHold{width:100%;min-height:58px;font-size:19px;touch-action:none;-webkit-touch-callout:none}
+#fnHold.holding{background:linear-gradient(180deg,#9be27a,#3fa34d);border-color:#7fd05a;color:#062a10}
+#fnChip{position:absolute;left:50%;top:calc(70px + var(--safe-t));transform:translateX(-50%);border-color:var(--beer);background:rgba(8,22,14,.8)}
+#ballPop{position:absolute;transform:translate(-50%,-100%);pointer-events:none;animation:bob .9s ease-in-out infinite alternate}
+#ballPop .bp{display:flex;flex-direction:column;align-items:center;background:var(--accent);color:#2a1503;border-radius:14px;padding:5px 12px;font-size:13px;box-shadow:0 6px 16px rgba(0,0,0,.4);position:relative}
+#ballPop .bp b{font-family:var(--display);font-weight:400;font-size:17px}
+#ballPop .bp::after{content:'';position:absolute;bottom:-8px;left:50%;margin-left:-8px;border:8px solid transparent;border-bottom:0;border-top-color:var(--accent)}
+#ballPop.edge{transform:translate(-50%,-50%);animation:none}
+#ballPop.edge .bp::after{display:none}
+#bpArrow{display:none;font-size:18px;line-height:1}
+#ballPop.edge #bpArrow{display:block}
+@keyframes bob{from{margin-top:0}to{margin-top:-8px}}
 .rulesEd{display:grid;gap:8px}
 .rule{display:grid;grid-template-columns:1.5fr 1.1fr .8fr 1.6fr auto;gap:6px;align-items:center}
 .rule select,.rule input{width:100%;padding:8px;border-radius:10px;border:1px solid var(--line);background:rgba(0,0,0,.3);color:var(--ink);font-size:14px;min-width:0}
@@ -220,7 +238,7 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
 <canvas id="dbl"></canvas>
 <div id="vig"></div>
 <div id="fade"></div>
-<div id="markers"><div id="target" hidden></div></div>
+<div id="markers"><div id="target" hidden></div><div id="ballPop" hidden><div class="bp"><span id="bpArrow">➤</span><b>⛳ Your ball</b><span id="bpDist"></span></div></div></div>
 
 <div id="hud" hidden>
   <div id="info" class="hcard">
@@ -245,10 +263,18 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
   <div id="banner" hidden><div class="b1" id="bn1"></div><div class="b2" id="bn2"></div></div>
   <button class="btn small" id="skipBtn" hidden>Skip ⏩</button>
   <div id="specBar" class="hcard" hidden><button class="ib" id="specPrev">◀</button><span id="specName">Watching</span><button class="ib" id="specNext">▶</button></div>
+  <div id="funnel" class="hcard" hidden>
+    <div class="pe">🍺</div><div class="pt">Funnel for a golf cart?</div>
+    <div class="ps">Funnel a beer to get a cart for this hole. Drive to your shots and run people over. It adds no shot power. Skip it and you run between shots (and can't hit anyone).</div>
+    <div id="fnTime">Ready?</div>
+    <button class="btn primary" id="fnHold">Hold while you funnel</button>
+    <button class="btn small" id="fnNo">No thanks, I'll run 🏃</button>
+  </div>
+  <button class="btn small" id="fnChip" hidden>🍺 Funnel for a cart</button>
   <div id="prompt" class="hcard" hidden><div class="pe" id="prE">🍺</div><div class="pt" id="prT">Drink!</div><div class="ps" id="prS"></div><div class="pc" id="prC"></div><div class="row"><button class="btn primary" id="prYes">Done 🍺</button><button class="btn" id="prNo">Skip</button></div></div>
   <div id="cartCtl" hidden>
     <div class="cc" id="ccL"><button class="pedal" id="cLeft">◀</button><button class="pedal" id="cRight">▶</button></div>
-    <div id="ccMid" class="hcard"><div id="cSpeed">0 mph</div><div class="row" style="justify-content:center;gap:6px"><button class="btn small" id="cHonk">📯</button><button class="btn small primary" id="cExit">⛳ Back to ball</button></div></div>
+    <div id="ccMid" class="hcard"><div id="cSpeed">0 mph</div><div id="cDist"></div><div class="row" style="justify-content:center;gap:6px"><button class="btn small" id="cHonk" title="Honk (G)">📯</button><button class="btn small" id="cSkip" title="Jump to your ball for a sip">⏭ Skip (sip)</button><button class="btn small primary" id="cExit" hidden>⛳ Play shot</button></div></div>
     <div class="cc" id="ccR"><button class="pedal" id="cBrake">▼</button><button class="pedal gas" id="cGas">▲</button></div>
   </div>
   <div id="bottom">
@@ -349,7 +375,7 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
       <div class="row"><button class="btn small" id="skipHoleBtn">End this hole for everyone</button></div>
     </div>
     <h3>Controls</h3>
-    <p class="muted">Drag (or A/D, arrow keys) to aim; hold Shift for fine aim. Drag up/down to look. Q/E or the arrows change club. Space or SWING: first press starts the backswing, second sets power, third sets accuracy when the needle comes back to the white line. Too early slices right, too late hooks left. B sips, N takes a shot. Z zooms, C toggles ball cam, Tab shows the scorecard. F (or 🚗) jumps in your golf cart: W/S or ▲▼ to drive, A/D or ◀▶ to steer, G honks. Hit a friend standing at their ball to run them over.</p>
+    <p class="muted">Drag (or A/D, arrow keys) to aim; hold Shift for fine aim. Drag up/down to look. Q/E or the arrows change club. Space or SWING: first press starts the backswing, second sets power, third sets accuracy when the needle comes back to the white line. Too early slices right, too late hooks left. B sips, N takes a shot. Z zooms, C toggles ball cam, Tab shows the scorecard. After each shot you travel to your ball: W/S or ▲▼ to go, A/D or ◀▶ (or drag) to steer, G honks. Funnel a beer on the tee for a cart; otherwise you run. When you reach your ball, press ⛳ Play shot (or F); ⏭ Skip jumps there for a sip. In a cart, hit a friend to run them over.</p>
     <div class="row" style="margin-top:14px"><button class="btn small" id="pickupBtn">Pick up (take max score)</button><button class="btn danger small" id="leaveBtn">Leave game</button></div>
   </div>
 </div>

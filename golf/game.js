@@ -123,8 +123,8 @@ function buzz() { const t = now(); BUZZ.b = Math.max(0, BUZZ.b - (t - BUZZ.at) /
 const powerMult = (putt) => 1 + (putt ? 0.075 : 0.15) * buzz();
 const LEVELS = [[0, 'Sober'], [1.5, 'Warming up'], [3.5, 'Buzzed'], [6, 'Tipsy'], [9, 'Loose'], [12, 'Drunk'], [15, 'Hammered'], [18, 'Legendary']];
 const buzzName = b => { let n = LEVELS[0][1]; for (const [v, s] of LEVELS) if (b >= v) n = s; return n; };
-function drink(kind) {
-  if (CART.driving) { toast('🚔 No drinking and driving! Park the cart first.'); return; }
+function drink(kind, force) {
+  if (CART.driving && !force) { toast('🚔 No drinking and driving! Park the cart first.'); return; }
   buzz(); BUZZ.b = Math.min(BUZZ_MAX, BUZZ.b + (kind === 'shot' ? 3 : 1));
   if (kind === 'shot') { BUZZ.sh++; SFX.shot(); } else { BUZZ.si++; SFX.glug(); }
   flash(); toHost({ t: 'drink', k: kind, bz: Math.round(BUZZ.b * 10) / 10 });
@@ -625,7 +625,8 @@ function buildAvatar(color) {
   const g = new THREE.Group(); g.rotation.order = 'YXZ';
   const cm = new THREE.MeshLambertMaterial({ color }), skin = new THREE.MeshLambertMaterial({ color: 0xe2b48c }), dark = new THREE.MeshLambertMaterial({ color: 0x2b2f3a });
   const box = (w, h, d, m, x, y, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); g.add(b); return b; };
-  box(0.16, 0.86, 0.18, dark, -0.11, 0.43, 0); box(0.16, 0.86, 0.18, dark, 0.11, 0.43, 0);
+  const lg1 = box(0.16, 0.86, 0.18, dark, -0.11, 0.43, 0), lg2 = box(0.16, 0.86, 0.18, dark, 0.11, 0.43, 0);
+  g.userData.legs = [lg1, lg2];
   box(0.46, 0.6, 0.26, cm, 0, 1.15, 0);
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), skin); head.position.y = 1.62; g.add(head);
   const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.148, 0.15, 0.09, 12), cm); cap.position.y = 1.72; g.add(cap);
@@ -651,10 +652,13 @@ function getBall(id) {
 }
 function dropBall(id) { const B = BALLS.get(id); if (!B) return; scene.remove(B.ball, B.shadow, B.trail, B.cart); if (B.avatar) scene.remove(B.avatar); BALLS.delete(id); }
 
-// ============================ golf carts ============================
-// Each player has a cart parked behind their ball. Hop in to drive around the hole; hit a
-// friend standing at their ball to run them over. The driver's browser does the collision.
-const CART = { driving: false, p: new THREE.Vector3(), yaw: 0, v: 0, steer: 0, look: 0, lastSend: 0, hitAt: 0, from: 'aim' };
+// ============================ getting to your ball ============================
+// After every shot you travel to your ball yourself. Funnel a beer on the tee and you get a golf
+// cart for the hole (and can run people over); otherwise you run, and can't hit anyone. Your own
+// browser moves you and checks collisions, then shares your position ten times a second.
+const CART = { driving: false, p: new THREE.Vector3(), yaw: 0, v: 0, steer: 0, look: 0, lastSend: 0, hitAt: 0, park: null, dry: null };
+const RUN = { on: false, p: new THREE.Vector3(), yaw: 0, v: 0, phase: 0, stunUntil: 0, tripAt: -1e9, dry: null };
+const FUN = { st: 'offer', t0: 0 }; // the tee-box funnel: offer | hold | declined | done
 const cartIn = { gas: false, brake: false, left: false, right: false };
 function buildCart(color) {
   const g = new THREE.Group(), body = new THREE.Group(); g.add(body); g.rotation.order = 'YXZ';
@@ -683,11 +687,11 @@ function parkSpot(x, z, slot) {
   const dx = Math.sin(yaw), dz = -Math.cos(yaw), lat = (slot - 1.5) * 1.7;
   return { x: x - dx * 6 + Math.cos(yaw) * lat, z: z - dz * 6 + Math.sin(yaw) * lat, yaw };
 }
+function teePark(slot) { const ts = teeSpot(HOLE, slot); return parkSpot(ts.x, ts.z, slot); }
 function updateCart(B, dt, t) {
   const c = B.cart, me = B.id === ME.id;
-  if (V.mode === 'intro') { c.visible = false; return; }
+  if (V.mode === 'intro' || !(me ? P.hasCart : B.hc || B.driving)) { c.visible = false; if (B.seat) B.seat.visible = false; return; }
   if (me && CART.driving) { placeCart(c, CART.p.x, CART.p.z, CART.yaw); c.visible = true; return; }
-  if (!me && B.driving && B.ct && t - B.ct.at > 3000) { B.driving = false; B.ct = null; }
   if (!me && B.driving && B.ct) {
     const lag = Math.min(0.25, (t - B.ct.at) / 1000), tx = B.ct.x + Math.sin(B.ct.yaw) * B.ct.v * lag, tz = B.ct.z - Math.cos(B.ct.yaw) * B.ct.v * lag;
     if (!B.cp) B.cp = { x: tx, z: tz, yaw: B.ct.yaw };
@@ -695,9 +699,14 @@ function updateCart(B, dt, t) {
     placeCart(c, B.cp.x, B.cp.z, B.cp.yaw); c.visible = true; B.seat.visible = true; return;
   }
   if (B.seat) B.seat.visible = false; B.cp = null;
-  const rest = me ? P.pos : B.rest;
-  if (!rest) { c.visible = false; return; }
-  const ps = parkSpot(rest.x, rest.z, B.slot); placeCart(c, ps.x, ps.z, ps.yaw); c.visible = true;
+  const ps = (me ? CART.park : B.park) || teePark(B.slot); placeCart(c, ps.x, ps.z, ps.yaw); c.visible = true;
+}
+// Smoothed position of another player who is driving or running, from their last update.
+function remotePose(B, dt, t) {
+  const lag = Math.min(0.25, (t - B.ct.at) / 1000), tx = B.ct.x + Math.sin(B.ct.yaw) * B.ct.v * lag, tz = B.ct.z - Math.cos(B.ct.yaw) * B.ct.v * lag;
+  if (!B.rp) B.rp = { x: tx, z: tz, yaw: B.ct.yaw, ph: 0 };
+  const k = 1 - Math.exp(-dt * 10); B.rp.x = lerp(B.rp.x, tx, k); B.rp.z = lerp(B.rp.z, tz, k); B.rp.yaw = angLerp(B.rp.yaw, B.ct.yaw, k); B.rp.ph += B.ct.v * dt * 1.6;
+  return B.rp;
 }
 let engine = null;
 function engineOn() {
@@ -706,29 +715,85 @@ function engineOn() {
   o.connect(f).connect(g).connect(master); o.start(); engine = { o, g };
 }
 function engineOff() { if (!engine) return; try { engine.g.gain.setTargetAtTime(0, AC.currentTime, 0.05); engine.o.stop(AC.currentTime + 0.3); } catch (e) {} engine = null; }
-const canCart = () => !!(HOLE && S && S.phase === 'play' && (V.mode === 'cart' || (V.mode === 'aim' && MT.st === 'idle') || V.mode === 'spec' || V.mode === 'done'));
-function startCart() {
-  if (!canCart() || V.mode === 'cart') return;
-  const B = getBall(ME.id); updateCart(B, 0, now());
-  CART.from = V.mode === 'aim' ? 'aim' : 'spec'; CART.p.set(B.cart.position.x, 0, B.cart.position.z);
-  CART.yaw = -B.cart.rotation.y; CART.v = 0; CART.steer = 0; CART.look = 0; CART.driving = true;
-  V.mode = 'cart'; V.zoom = false; hideBanner(); engineOn(); sendCart(true);
+const travelling = () => V.mode === 'cart' || V.mode === 'run';
+const canTravel = () => !!(HOLE && S && S.phase === 'play' && ((V.mode === 'aim' && MT.st === 'idle') || V.mode === 'spec' || V.mode === 'done'));
+const travelPos = () => CART.driving ? CART.p : RUN.p;
+const ballDist = () => P.pos ? Math.hypot(P.pos.x - travelPos().x, P.pos.z - travelPos().z) : 1e9;
+const nearBall = () => !P.done && ballDist() < (CART.driving ? 9 : 5);
+// from: where you're standing ({x, z, yaw}); runners start a step behind it.
+function startTravel(from) {
+  if (!HOLE || !S || S.phase !== 'play' || CART.driving || RUN.on) return;
+  V.zoom = false; V.look = 0; CART.look = 0; hideBanner(); for (const k in cartIn) cartIn[k] = false;
+  if (P.hasCart) {
+    const ps = CART.park || teePark(ME.slot);
+    CART.p.set(ps.x, 0, ps.z); CART.yaw = ps.yaw; CART.v = 0; CART.steer = 0; CART.dry = { x: ps.x, z: ps.z }; CART.driving = true; V.mode = 'cart'; engineOn();
+  } else {
+    RUN.p.set(from.x - Math.sin(from.yaw) * 1.5, 0, from.z + Math.cos(from.yaw) * 1.5);
+    RUN.yaw = P.done || Math.hypot(P.pos.x - RUN.p.x, P.pos.z - RUN.p.z) < 3 ? from.yaw : yawTo(RUN.p.x, RUN.p.z, P.pos.x, P.pos.z);
+    RUN.v = 0; RUN.stunUntil = 0; RUN.dry = { x: RUN.p.x, z: RUN.p.z }; RUN.on = true; V.mode = 'run';
+  }
+  sendPose(true);
 }
-function stopCart(quiet) {
-  if (!CART.driving) return;
-  CART.driving = false; CART.v = 0; engineOff(); for (const k in cartIn) cartIn[k] = false;
-  toHost({ t: 'cart', d: 0 });
-  if (quiet || V.mode !== 'cart') return;
-  if (P.done) { V.mode = 'spec'; pickSpec(0); } else { V.mode = 'walk'; V.t0 = now(); fade(true); }
+function endTravel(quiet) {
+  if (!CART.driving && !RUN.on) return;
+  // park beside and behind the ball so the cart isn't in the way of your shot
+  if (CART.driving) { CART.park = !quiet && !P.done && nearBall() ? parkSpot(P.pos.x, P.pos.z, ME.slot) : { x: CART.p.x, z: CART.p.z, yaw: CART.yaw }; CART.p.set(CART.park.x, 0, CART.park.z); CART.yaw = CART.park.yaw; engineOff(); toHost({ t: 'cart', d: 0, mo: 'cart', p: [+CART.p.x.toFixed(2), +CART.p.z.toFixed(2)], y: +CART.yaw.toFixed(3) }); }
+  else toHost({ t: 'cart', d: 0, mo: 'run' });
+  CART.driving = false; CART.v = 0; RUN.on = false; RUN.v = 0; for (const k in cartIn) cartIn[k] = false;
+  if (quiet) return;
+  if (P.done) { V.mode = 'spec'; pickSpec(0); return; }
+  P.club = autoClub(); P.yaw = autoAim(); fade(true); setTimeout(() => fade(false), 220); beginAim();
 }
-function sendCart(force) {
+function skipToBall() {
+  if (!(CART.driving || RUN.on) || P.done) return;
+  drink('sip', true); toast('⏭ Skipped to your ball. That cost a sip.');
+  if (CART.driving) { const ps = parkSpot(P.pos.x, P.pos.z, ME.slot); CART.p.set(ps.x, 0, ps.z); CART.yaw = ps.yaw; }
+  endTravel();
+}
+function sendPose(force) {
   const t = now(); if (!force && t - CART.lastSend < 100) return; CART.lastSend = t;
-  toHost({ t: 'cart', p: [+CART.p.x.toFixed(2), +CART.p.z.toFixed(2)], y: +CART.yaw.toFixed(3), v: +CART.v.toFixed(2), d: 1 });
+  const q = travelPos(), y = CART.driving ? CART.yaw : RUN.yaw, v = CART.driving ? CART.v : RUN.v;
+  toHost({ t: 'cart', mo: CART.driving ? 'cart' : 'run', p: [+q.x.toFixed(2), +q.z.toFixed(2)], y: +y.toFixed(3), v: +v.toFixed(2), d: 1 });
+}
+// Driving into a pond sinks the cart: you swim out and run for the rest of the hole.
+function sinkCart() {
+  SFX.splash(); toast('🌊 Your cart sank! You\'re on foot for the rest of the hole.'); ev('cartwater');
+  const d = CART.dry || { x: CART.p.x, z: CART.p.z }, yaw = CART.yaw;
+  engineOff(); CART.driving = false; CART.v = 0; CART.park = null; P.hasCart = false; toHost({ t: 'nocart' });
+  RUN.p.set(d.x, 0, d.z); RUN.yaw = yaw + Math.PI; RUN.v = 0; RUN.dry = { ...d }; RUN.stunUntil = now() + 900; RUN.tripAt = now(); RUN.on = true; V.mode = 'run';
+  sendPose(true);
 }
 function cartTree(x, z) {
   const H = HOLE, bx = Math.floor(x / 16), bz = Math.floor(z / 16);
   for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const a = H.tgrid.get((bx + i) * 65536 + bz + j); if (a) for (const t of a) if (Math.hypot(x - t.x, z - t.z) < t.tr + 0.8) return t; }
   return null;
+}
+function runStep(dt, t) {
+  const H = HOLE, b = buzz();
+  const fwd = keys.has('w') || keys.has('arrowup') || cartIn.gas, back = keys.has('s') || keys.has('arrowdown') || cartIn.brake;
+  const left = keys.has('a') || keys.has('arrowleft') || cartIn.left, right = keys.has('d') || keys.has('arrowright') || cartIn.right;
+  const stunned = t < RUN.stunUntil;
+  RUN.yaw += ((right ? 1 : 0) - (left ? 1 : 0)) * 2.2 * dt;
+  const sf = surfAt(H, RUN.p.x, RUN.p.z), vmax = 6.5 * (sf === 'sand' ? 0.55 : sf === 'rough' || sf === 'oob' ? 0.85 : 1);
+  RUN.v = lerp(RUN.v, stunned ? 0 : fwd ? vmax : back ? -2.5 : 0, 1 - Math.exp(-dt * 6));
+  // drunk running: your line wanders, you lurch sideways, and now and then you trip
+  const sp = Math.abs(RUN.v) / 6.5;
+  RUN.yaw += b * 0.035 * Math.sin(t * 0.0011 + 1) * sp * dt;
+  const lurch = b * 0.09 * Math.sin(t * 0.0023) * sp;
+  if (!stunned && b > 4 && RUN.v > 4 && Math.random() < dt * b * 0.004) {
+    RUN.stunUntil = t + 1300; RUN.tripAt = t; RUN.v = 0; SFX.thud(); toast('🤕 You tripped!'); ev('trip'); V.shakeT = t; V.shakeA = 0.6;
+  }
+  const dx = Math.sin(RUN.yaw), dz = -Math.cos(RUN.yaw), rx = Math.cos(RUN.yaw), rz = Math.sin(RUN.yaw);
+  const nx = RUN.p.x + (dx * RUN.v + rx * lurch) * dt, nz = RUN.p.z + (dz * RUN.v + rz * lurch) * dt;
+  let blocked = !!cartTree(nx, nz) || nx < H.m.x0 + 8 || nx > H.m.x1 - 8 || nz < H.m.z0 + 8 || nz > H.m.z1 - 8;
+  for (const B of BALLS.values()) if (B.cart.visible && Math.hypot(B.cart.position.x - nx, B.cart.position.z - nz) < 1.3) blocked = true;
+  if (blocked) RUN.v *= 0.3; else RUN.p.set(nx, 0, nz);
+  if (surfAt(H, RUN.p.x, RUN.p.z) === 'water') {
+    SFX.splash(); toast('💦 You ran into the water!'); ev('swim');
+    RUN.p.set(RUN.dry.x, 0, RUN.dry.z); RUN.v = 0; RUN.stunUntil = t + 900; RUN.tripAt = t;
+  } else RUN.dry = { x: RUN.p.x, z: RUN.p.z };
+  RUN.phase += RUN.v * dt * 1.6;
+  sendPose(false);
 }
 function driveCart(dt, t) {
   const H = HOLE, b = buzz();
@@ -754,8 +819,9 @@ function driveCart(dt, t) {
       toHost({ t: 'runover', id: B.id, dx: +(dx * sg).toFixed(2), dz: +(dz * sg).toFixed(2) });
     }
   }
-  if (surfAt(H, CART.p.x, CART.p.z) === 'water') { SFX.splash(); toast('🌊 You drove into the water!'); ev('cartwater'); stopCart(); return; }
-  sendCart(false);
+  if (surfAt(H, CART.p.x, CART.p.z) === 'water') { sinkCart(); return; }
+  CART.dry = { x: CART.p.x, z: CART.p.z };
+  sendPose(false);
 }
 function resetBallVisual(B) { B.anim = null; B.trail.geometry.setDrawRange(0, 0); }
 function placeBall(B, x, y, z) {
@@ -848,8 +914,9 @@ function startHole(s) {
   if (!HOLE || HOLE.seed !== s.seed || HOLE.idx !== s.hole) buildHole(s.seed, s.hole, s.nh);
   P.key = key; P.strokes = 0; P.putts = 0; P.done = false; P.lie = 'tee'; P.firstShot = true; P.pend = null;
   const ts = teeSpot(HOLE, ME.slot); P.pos = { x: ts.x, y: groundY(HOLE, ts.x, ts.z) + BR, z: ts.z }; P.prev = { ...P.pos };
-  if (CART.driving) stopCart(true);
-  for (const B of BALLS.values()) { resetBallVisual(B); B.rest = null; B.driving = false; B.ct = null; B.flatT = 0; }
+  if (CART.driving || RUN.on) endTravel(true);
+  P.hasCart = false; CART.park = null; FUN.st = 'offer';
+  for (const B of BALLS.values()) { resetBallVisual(B); B.rest = null; B.driving = false; B.running = false; B.ct = null; B.rp = null; B.park = null; B.flatT = 0; }
   P.club = autoClub(); P.yaw = autoAim(); V.look = 0;
   MT.st = 'idle'; MT.follow = 0; MT.swingA = 0;
   V.mode = 'intro'; V.t0 = now(); V.spec = 0;
@@ -951,7 +1018,7 @@ function finishShot() {
   if (!P.done && res.out === 'rest') toast((R.putt ? '' : SURF[P.lie].name) + dist + (R.putt ? fmtDist(distToPin(P.pos.x, P.pos.z)) + ' left' : ''));
   if (P.done) holeOut();
   toHost({ t: 'ball', p: [P.pos.x, P.pos.y, P.pos.z], k: P.strokes, lie: P.lie, dn: P.done, drive, water, ob, feed });
-  if (!P.done) { V.mode = 'walk'; V.t0 = now(); fade(true); }
+  if (!P.done) startTravel({ x: P.prev.x, z: P.prev.z, yaw: P.yaw });
 }
 function scoreName(k, par) {
   if (k === 1) return 'Hole in one!';
@@ -1004,6 +1071,12 @@ function updateCamera(dt, t) {
     V.camPos.set(-0.3, 1.5, 0.12).applyMatrix4(c.matrixWorld);
     if (drag.id == null) CART.look *= Math.exp(-dt * 2.5);
     V.camYaw = CART.yaw + CART.look; V.camPitch = -0.1 + c.rotation.x + V.look * 0.5; roll += c.rotation.z;
+  } else if (V.mode === 'run') {
+    const sp = Math.abs(RUN.v) / 6.5, tr = (t - RUN.tripAt) / 1300;
+    let eye = 1.65 + Math.sin(RUN.phase * 2) * 0.06 * sp;
+    if (tr < 1) { const k = smooth(0.45, 1, tr); eye = lerp(0.4, eye, k); roll += 0.5 * (1 - k); }
+    V.camPos.set(RUN.p.x, groundY(H, RUN.p.x, RUN.p.z) + eye, RUN.p.z);
+    V.camYaw = RUN.yaw; V.camPitch = -0.08 + V.look; roll += Math.sin(RUN.phase) * 0.015 * sp;
   } else if (V.mode === 'aim' || V.mode === 'walk' || (V.mode === 'flight' && !SET.cam) || V.mode === 'done' && V.t0 + 600 > t) {
     const putt = CLUBS[P.club].putt, origin = V.mode === 'flight' || V.mode === 'done' ? (P.prev || P.pos) : P.pos;
     const yaw = V.mode === 'aim' ? P.yaw + swayYaw(t, putt) : P.yaw;
@@ -1061,6 +1134,8 @@ function pickSpec(dir) {
 }
 
 // ============================ per-frame game update ============================
+const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 45, 14, 1, true), new THREE.MeshBasicMaterial({ color: 0xffc53d, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.DoubleSide, fog: false }));
+beacon.geometry.translate(0, 22.5, 0); beacon.visible = false; scene.add(beacon);
 const tgtRing = new THREE.Mesh(new THREE.RingGeometry(0.75, 1, 40), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.75, depthWrite: false, side: THREE.DoubleSide }));
 tgtRing.geometry.rotateX(-Math.PI / 2); tgtRing.renderOrder = 2; scene.add(tgtRing);
 const dotGeo = new THREE.CircleGeometry(1, 10); dotGeo.rotateX(-Math.PI / 2);
@@ -1110,11 +1185,14 @@ function updateGame(dt, t) {
     B.ball.visible = has && !holed && V.mode !== 'intro'; B.shadow.visible = B.ball.visible;
     B.trail.visible = !!B.anim && V.mode !== 'intro';
     if (B.avatar) {
-      const st = B.anim && !B.anim.done ? B.anim.origin : B.rest, yw = B.anim && !B.anim.done ? B.anim.origin.yaw : B.yaw;
-      B.standing = !!(st && !B.dn && !B.driving && V.mode !== 'intro');
+      if ((B.driving || B.running) && B.ct && t - B.ct.at > 3000) { B.driving = B.running = false; B.ct = null; }
+      const run = B.running && B.ct ? remotePose(B, dt, t) : null; if (!run) B.rp = null;
+      const st = run || (B.anim && !B.anim.done ? B.anim.origin : B.rest), yw = run ? run.yaw : B.anim && !B.anim.done ? B.anim.origin.yaw : B.yaw;
+      B.standing = !!(st && (run || !B.dn) && !B.driving && V.mode !== 'intro');
       if (B.standing) {
-        const ax = st.x - Math.sin(yw) * 0.9, az = st.z + Math.cos(yw) * 0.9;
+        const ax = run ? run.x : st.x - Math.sin(yw) * 0.9, az = run ? run.z : st.z + Math.cos(yw) * 0.9;
         B.avatar.position.set(ax, groundY(H, ax, az), az); B.avatar.rotation.set(0, -yw, 0);
+        const sw = run ? Math.sin(run.ph) * 0.75 * Math.min(1, Math.abs(B.ct.v) / 3) : 0; B.avatar.userData.legs[0].rotation.x = sw; B.avatar.userData.legs[1].rotation.x = -sw;
         const ft = (t - B.flatT) / 1000;
         if (ft < 3.2) { // launched by a cart, then flat on the grass, then back up
           const e = Math.min(ft, 0.9); B.avatar.position.x += B.flatDir[0] * e * 5; B.avatar.position.z += B.flatDir[1] * e * 5;
@@ -1125,7 +1203,10 @@ function updateGame(dt, t) {
     }
     updateCart(B, dt, t);
   }
-  if (V.mode === 'cart') driveCart(dt, t);
+  if (V.mode === 'cart') driveCart(dt, t); else if (V.mode === 'run') runStep(dt, t);
+  // your ball's beacon while you're travelling to it
+  beacon.visible = travelling() && !P.done && !!P.pos;
+  if (beacon.visible) { beacon.position.set(P.pos.x, groundY(H, P.pos.x, P.pos.z), P.pos.z); beacon.material.opacity = 0.22 + Math.sin(t * 0.005) * 0.08; beacon.material.color.set(PCOL[ME.slot]); }
   // flag flutter
   if (flagCloth) { const p = flagCloth.geometry.attributes.position; for (let i = 0; i < p.count; i++) { const x = p.getX(i); p.setZ(i, Math.sin(t * 0.006 + x * 6) * 0.06 * x); } p.needsUpdate = true; flagCloth.rotation.y = Math.atan2(-H.wind.z, H.wind.x) + Math.PI * 0; }
   if (flagGroup) flagGroup.visible = !(V.mode === 'aim' && CLUBS[P.club].putt && distToPin(P.pos.x, P.pos.z) < 2.5);
@@ -1189,10 +1270,21 @@ function updateHud(t) {
   if (spec) setText($('specName'), 'Watching ' + playerName(V.spec));
   else if (V.mode === 'spec') setText($('specName'), 'Waiting for the others');
   $('bZoom').classList.toggle('on', V.zoom); $('bCam').classList.toggle('on', !!SET.cam);
-  const inCart = V.mode === 'cart';
-  $('bottom').hidden = inCart; $('cartCtl').hidden = !inCart; $('bCart').disabled = !canCart(); $('bCart').classList.toggle('on', inCart);
-  if (inCart) setText($('cSpeed'), Math.round(Math.abs(CART.v) * MPH) + ' mph');
-  setText($('cExit'), P.done ? '👀 Watch' : '⛳ Back to ball');
+  const tr = travelling();
+  $('bottom').hidden = tr; $('cartCtl').hidden = !tr; $('bCart').disabled = !canTravel() && !tr; $('bCart').classList.toggle('on', tr);
+  setText($('bCart'), P.hasCart ? '🚗' : '🏃'); $('bCart').title = P.hasCart ? 'Drive your cart (F)' : 'Run (F)';
+  if (tr) {
+    setText($('cSpeed'), (CART.driving ? '' : '🏃 ') + Math.round(Math.abs(CART.driving ? CART.v : RUN.v) * MPH) + ' mph');
+    setText($('cDist'), P.done ? 'Holed out' : nearBall() ? 'You made it!' : 'Your ball: ' + fmtDist(ballDist()));
+    $('cExit').hidden = !(P.done || nearBall()); setText($('cExit'), P.done ? '👀 Watch' : '⛳ Play shot');
+    $('cSkip').hidden = P.done || nearBall(); $('cHonk').hidden = !CART.driving;
+  }
+  // tee-box funnel
+  const fa = S.phase === 'play' && V.mode === 'aim' && !P.hasCart && P.strokes === 0 && P.lie === 'tee' && FUN.st !== 'done';
+  $('funnel').hidden = !(fa && (FUN.st === 'offer' || FUN.st === 'hold')); $('fnChip').hidden = !(fa && FUN.st === 'declined');
+  if (FUN.st === 'hold') { const ms = t - FUN.t0; setText($('fnTime'), (ms / 1000).toFixed(1) + ' s'); if (ms > 90000 || !fa) funnelRelease(); }
+  else setText($('fnTime'), 'Ready?');
+  $('fnHold').classList.toggle('holding', FUN.st === 'hold'); setText($('fnHold'), FUN.st === 'hold' ? 'Funneling… let go when it\'s empty' : 'Hold while you funnel');
 }
 function renderBoard() {
   if (!S) return;
@@ -1247,9 +1339,20 @@ function updateMarkers() {
       if (!B.ball.visible) continue;
       const p = B.ball.position, dc = p.distanceTo(camera.position), mine = B.id === ME.id;
       if (!mine && B.avatar && B.avatar.visible && !(B.anim && !B.anim.done)) placeMarker(marker('n' + B.id, 'name', '<span class="lab">' + esc(playerName(B.id)) + '</span>', B.color), B.avatar.position.x, B.avatar.position.y + 2.15, B.avatar.position.z);
-      else if (dc > 14) placeMarker(marker('b' + B.id, 'ball', '<span class="lab">' + (mine ? 'You' : esc(playerName(B.id))) + '</span><span class="ring"></span>', B.color), p.x, p.y, p.z);
+      else if (dc > 14 && !(mine && travelling())) placeMarker(marker('b' + B.id, 'ball', '<span class="lab">' + (mine ? 'You' : esc(playerName(B.id))) + '</span><span class="ring"></span>', B.color), p.x, p.y, p.z);
     }
   }
+  // pop-up over your own ball while you travel to it; pinned to the screen edge when it's out of view
+  const pop = $('ballPop');
+  if (live && P.pos && !P.done && travelling()) {
+    _v.set(P.pos.x, groundY(HOLE, P.pos.x, P.pos.z) + 1.2, P.pos.z).project(camera);
+    let x = _v.x, y = _v.y; const behind = _v.z > 1; if (behind) { x = -x; y = -y; if (Math.hypot(x, y) < 0.05) y = -1; }
+    const edge = behind || Math.abs(x) > 0.9 || Math.abs(y) > 0.8;
+    if (edge) { const k = 1 / Math.max(Math.abs(x) / 0.88, Math.abs(y) / 0.72, 1e-3); x *= k; y *= k; }
+    pop.hidden = false; pop.classList.toggle('edge', edge); pop.style.left = ((x + 1) / 2 * innerWidth).toFixed(1) + 'px'; pop.style.top = ((1 - y) / 2 * innerHeight).toFixed(1) + 'px';
+    $('bpArrow').style.transform = 'rotate(' + Math.atan2(-y, x).toFixed(3) + 'rad)';
+    setText($('bpDist'), fmtDist(ballDist()));
+  } else pop.hidden = true;
   const tg = $('target');
   if (live && targetInfo && !CLUBS[P.club].putt) { _v.set(targetInfo.x, targetInfo.y + 0.5, targetInfo.z).project(camera); tg.hidden = _v.z > 1; tg.style.left = ((_v.x + 1) / 2 * innerWidth) + 'px'; tg.style.top = ((1 - _v.y) / 2 * innerHeight + 14) + 'px'; setText(tg, yds(targetInfo.d) + ' yds'); }
   else tg.hidden = true;
@@ -1282,6 +1385,11 @@ function drawMini() {
     const [ax, az] = X.f(P.pos.x, P.pos.z), [tx, tz] = X.f(targetInfo.x, targetInfo.z);
     g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = 1.5; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(ax, az); g.lineTo(tx, tz); g.stroke(); g.setLineDash([]);
     g.beginPath(); g.arc(tx, tz, Math.max(3, CLUBS[P.club].putt ? 2 : targetInfo.d * 0.05 * X.s), 0, 7); g.stroke();
+  }
+  if (travelling()) {
+    const q = travelPos(), yw = (CART.driving ? CART.yaw : RUN.yaw) + X.rho, [qx, qz] = X.f(q.x, q.z);
+    g.save(); g.translate(qx, qz); g.rotate(yw); g.fillStyle = '#fff'; g.strokeStyle = '#000'; g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(0, -8); g.lineTo(5, 5); g.lineTo(-5, 5); g.closePath(); g.fill(); g.stroke(); g.restore();
   }
   for (const B of BALLS.values()) {
     if (!B.ball.visible) continue; const [bx, bz] = X.f(B.ball.position.x, B.ball.position.z);
@@ -1336,7 +1444,7 @@ function renderCard() {
       h += '<td class="' + (i === cur ? 'cur' : '') + '">' + (v != null ? '<span class="sc ' + cls + '">' + v + '</span>' : live || '–') + '</td>';
     }
     const t = toPar(p);
-    h += '<td><b>' + (strokesTotal(p) || '–') + '</b></td><td class="tp ' + (t < 0 ? 'u' : t > 0 ? 'o' : '') + '">' + fmtPar(t) + '</td><td>' + (p.si + p.sh) + '</td></tr>';
+    h += '<td><b>' + (strokesTotal(p) || '–') + '</b></td><td class="tp ' + (t < 0 ? 'u' : t > 0 ? 'o' : '') + '">' + fmtPar(t) + '</td><td>' + (p.si + p.sh + (p.fn || 0)) + '</td></tr>';
   }
   setHTML($('cardTable'), h);
   const fin = kind === 'final';
@@ -1349,8 +1457,9 @@ function awardsHtml() {
   const A = [];
   const best = Math.min(...pl.map(toPar)), champs = pl.filter(p => toPar(p) === best);
   A.push(['🏆', 'Champion', champs.map(p => p.n).join(' & '), fmtPar(best) + ' · ' + strokesTotal(champs[0]) + ' strokes']);
-  const drinks = p => p.si + p.sh, mx = Math.max(...pl.map(drinks));
-  if (mx > 0) { const w = pl.filter(p => drinks(p) === mx); A.push(['🍺', 'Thirstiest', w.map(p => p.n).join(' & '), w[0].si + ' sips, ' + w[0].sh + ' shots']); }
+  const drinks = p => p.si + p.sh + (p.fn || 0), mx = Math.max(...pl.map(drinks));
+  if (mx > 0) { const w = pl.filter(p => drinks(p) === mx); A.push(['🍺', 'Thirstiest', w.map(p => p.n).join(' & '), w[0].si + ' sips, ' + w[0].sh + ' shots, ' + (w[0].fn || 0) + ' funnels']); }
+  const fb = pl.filter(p => p.fb > 0).sort((a, b) => a.fb - b.fb)[0]; if (fb) A.push(['🍻', 'Fastest funnel', fb.n, (fb.fb / 1000).toFixed(1) + ' s']);
   const ld = Math.max(...pl.map(p => p.ld)); if (ld > 0) { const w = pl.find(p => p.ld === ld); A.push(['💥', 'Longest drive', w.n, yds(ld) + ' yds']); }
   const wt = Math.max(...pl.map(p => p.wt)); if (wt > 0) { const w = pl.filter(p => p.wt === wt); A.push(['🐟', 'Fish food', w.map(p => p.n).join(' & '), wt + ' water ball' + (wt > 1 ? 's' : '')]); }
   if (pl.length > 1) { const mn = Math.min(...pl.map(drinks)); if (mn < mx) { const w = pl.filter(p => drinks(p) === mn); A.push(['🚗', 'Designated driver', w.map(p => p.n).join(' & '), mn + ' drink' + (mn === 1 ? '' : 's')]); } }
@@ -1375,6 +1484,9 @@ const TRIG = {
   runover: ['🚗', 'Roadkill!', 'Gets run over', 'got run over'],
   runner: ['🏎️', 'Hit and run', 'Runs someone over', 'ran someone over'],
   cartwater: ['🌊', 'Cart overboard', 'Drives a cart into water', 'drove a cart into the water'],
+  swim: ['🏊', 'Swim time', 'Runs into water', 'ran into the water'],
+  trip: ['🤕', 'Faceplant', 'Trips while running', 'tripped and ate grass'],
+  funnel: ['🍺', 'Funnel!', 'Funnels a beer', 'funneled a beer'],
   hole: ['⛳', 'New hole', 'Start of every hole', ''],
 };
 const WHO = [['me', 'That player'], ['others', 'Everyone else'], ['all', 'Everyone']];
@@ -1382,7 +1494,7 @@ const AMT = [['sip', 'Sip 🍺'], ['shot', 'Shot 🥃']];
 const defaultRules = () => [
   { w: 'water', who: 'me', k: 'sip', txt: '' }, { w: 'oob', who: 'me', k: 'sip', txt: '' }, { w: 'threeputt', who: 'me', k: 'sip', txt: '' },
   { w: 'blowup', who: 'me', k: 'sip', txt: '' }, { w: 'worst', who: 'me', k: 'sip', txt: '' }, { w: 'birdie', who: 'others', k: 'sip', txt: '' },
-  { w: 'ace', who: 'others', k: 'shot', txt: '' }, { w: 'runover', who: 'me', k: 'shot', txt: '' }, { w: 'cartwater', who: 'me', k: 'shot', txt: '' },
+  { w: 'ace', who: 'others', k: 'shot', txt: '' }, { w: 'runover', who: 'me', k: 'shot', txt: '' }, { w: 'cartwater', who: 'me', k: 'shot', txt: '' }, { w: 'swim', who: 'me', k: 'sip', txt: '' },
 ];
 function cleanRules(a) {
   if (!Array.isArray(a)) return [];
@@ -1458,11 +1570,11 @@ const inviteLink = () => location.href.split(/[?#]/)[0] + '?join=' + NET.code;
 // ----- host -----
 const HS = { seed: 0, nh: 9, hole: 0, phase: 'lobby', rules: [], until: 0, game: 0, nextId: 1, players: new Map(), lastState: 0 };
 const cleanName = n => (String(n || '').replace(/[^\p{L}\p{N} ._'-]/gu, '').trim().slice(0, 14)) || 'Golfer';
-function newRec(id, n, slot) { return { id, n, slot, sc: Array(18).fill(null), k: 0, dn: false, p: null, y: 0, lie: 'tee', si: 0, sh: 0, bz: 0, ld: 0, wt: 0, ob: 0 }; }
+function newRec(id, n, slot) { return { id, n, slot, sc: Array(18).fill(null), k: 0, dn: false, p: null, y: 0, lie: 'tee', si: 0, sh: 0, bz: 0, ld: 0, wt: 0, ob: 0, fn: 0, fb: 0, hc: false, cp: null }; }
 function freeSlot() { const used = new Set([...HS.players.values()].map(p => p.slot)); for (let i = 0; i < MAX_PLAYERS; i++) if (!used.has(i)) return i; return 0; }
 function stateObj() {
   return { seed: HS.seed, nh: HS.nh, hole: HS.hole, phase: HS.phase, rules: HS.rules, game: HS.game, left: Math.max(0, HS.until - now()), code: NET.code, solo: NET.solo,
-    pl: [...HS.players.values()].map(r => ({ id: r.id, n: r.n, slot: r.slot, sc: r.sc.slice(0, HS.nh), k: r.k, dn: r.dn, p: r.p, y: r.y, lie: r.lie, si: r.si, sh: r.sh, bz: r.bz, ld: r.ld, wt: r.wt })) };
+    pl: [...HS.players.values()].map(r => ({ id: r.id, n: r.n, slot: r.slot, sc: r.sc.slice(0, HS.nh), k: r.k, dn: r.dn, p: r.p, y: r.y, lie: r.lie, si: r.si, sh: r.sh, bz: r.bz, ld: r.ld, wt: r.wt, fn: r.fn || 0, fb: r.fb || 0, hc: !!r.hc, cp: r.cp || null })) };
 }
 function hostGame(solo) {
   leaveNet(); NET.role = 'host'; NET.solo = solo;
@@ -1553,15 +1665,22 @@ function hostRecv(id, m) {
     }
     case 'bz': r.bz = +m.bz || 0; break;
     case 'ev': {
-      if (HS.phase !== 'play' || !TRIG[m.e] || ['worst', 'best', 'longdrive', 'hole', 'runover', 'runner'].includes(m.e)) break;
+      if (HS.phase !== 'play' || !TRIG[m.e] || ['worst', 'best', 'longdrive', 'hole', 'runover', 'runner', 'funnel'].includes(m.e)) break;
       if (m.e === 'cartwater') bcast({ t: 'feed', m: '🌊 ' + r.n + ' drove a cart into the water' });
       hostRule(m.e, id); break;
     }
     case 'cart': {
-      r.drv = !!m.d;
-      const p = Array.isArray(m.p) ? [+m.p[0] || 0, +m.p[1] || 0] : [0, 0];
-      bcastExcept(id, { t: 'cart', id, p, y: +m.y || 0, v: +m.v || 0, d: m.d ? 1 : 0 }); break;
+      const p = Array.isArray(m.p) ? [+m.p[0] || 0, +m.p[1] || 0] : null, mo = m.mo === 'run' ? 'run' : 'cart';
+      if (!m.d && p && mo === 'cart') r.cp = [p[0], p[1], +m.y || 0];
+      bcastExcept(id, { t: 'cart', id, p, y: +m.y || 0, v: +m.v || 0, d: m.d ? 1 : 0, mo }); break;
     }
+    case 'funnel': {
+      if (HS.phase !== 'play' || r.hc) break;
+      const ms = clamp(+m.ms || 0, 2000, 90000); r.hc = true; r.fn = (r.fn || 0) + 1; r.fb = r.fb ? Math.min(r.fb, ms) : ms;
+      bcast({ t: 'feed', m: '🍺 ' + r.n + ' funneled a beer in ' + (ms / 1000).toFixed(1) + ' s and grabbed a cart!' });
+      hostRule('funnel', id); bcastState(); break;
+    }
+    case 'nocart': r.hc = false; r.cp = null; bcastState(); break;
     case 'honk': if (now() - (r.honkAt || 0) > 600) { r.honkAt = now(); bcastExcept(id, { t: 'honk', id }); } break;
     case 'runover': {
       if (HS.phase !== 'play') break;
@@ -1587,7 +1706,7 @@ function hostRecv(id, m) {
 }
 function hostStart() {
   HS.game++; HS.hole = 0; HS.phase = 'play';
-  for (const r of HS.players.values()) { r.sc = Array(18).fill(null); r.k = 0; r.dn = false; r.p = null; r.si = 0; r.sh = 0; r.ld = 0; r.wt = 0; r.hd = 0; }
+  for (const r of HS.players.values()) { r.sc = Array(18).fill(null); r.k = 0; r.dn = false; r.p = null; r.si = 0; r.sh = 0; r.ld = 0; r.wt = 0; r.hd = 0; r.fn = 0; r.fb = 0; r.hc = false; r.cp = null; }
   bcastState(); hostRule('hole', 0);
 }
 function hostCheck() {
@@ -1605,7 +1724,7 @@ function hostCheck() {
 }
 function hostTick(t) {
   if (HS.phase === 'card' && t >= HS.until) {
-    if (HS.hole + 1 < HS.nh) { HS.hole++; HS.phase = 'play'; for (const r of HS.players.values()) { r.k = 0; r.dn = false; r.p = null; r.lie = 'tee'; r.hd = 0; } }
+    if (HS.hole + 1 < HS.nh) { HS.hole++; HS.phase = 'play'; for (const r of HS.players.values()) { r.k = 0; r.dn = false; r.p = null; r.lie = 'tee'; r.hd = 0; r.hc = false; r.cp = null; } }
     else HS.phase = 'final';
     bcastState();
     if (HS.phase === 'play') hostRule('hole', 0);
@@ -1687,7 +1806,11 @@ function clientRecv(m) {
     case 'cheers': toast('🍻 ' + m.n + ' says cheers!'); SFX.clink(); break;
     case 'cart': {
       if (!HOLE || !S || S.phase !== 'play' || m.id === ME.id) break;
-      const B = getBall(m.id); B.driving = !!m.d; B.ct = m.d ? { x: m.p[0], z: m.p[1], yaw: m.y, v: m.v, at: now() } : null; break;
+      const B = getBall(m.id), on = !!m.d && Array.isArray(m.p);
+      B.driving = on && m.mo !== 'run'; B.running = on && m.mo === 'run';
+      B.ct = on ? { x: m.p[0], z: m.p[1], yaw: m.y, v: m.v, at: now() } : null;
+      if (!m.d && m.mo === 'cart' && Array.isArray(m.p)) B.park = { x: m.p[0], z: m.p[1], yaw: m.y };
+      break;
     }
     case 'honk': { const B = BALLS.get(m.id); if (B && B.cart && B.cart.visible && B.cart.position.distanceTo(camera.position) < 80) SFX.horn(); break; }
     case 'flat': {
@@ -1695,6 +1818,7 @@ function clientRecv(m) {
       if (m.id === ME.id) {
         showBanner('RUN OVER! 🚗💥', 'by ' + playerName(m.by), 2400); V.shakeT = now(); V.shakeA = 1; SFX.thud(); SFX.aww();
         if (V.mode === 'aim') { MT.st = 'idle'; P.yaw += (Math.random() - 0.5) * 1.4; MT.msg = 'Knocked silly!'; MT.msgT = now(); }
+        if (V.mode === 'run') { RUN.stunUntil = now() + 1600; RUN.tripAt = now(); RUN.v = 0; RUN.p.x += (m.dx || 0) * 3; RUN.p.z += (m.dz || 0) * 3; }
       } else if (B && B.avatar && B.avatar.position.distanceTo(camera.position) < 60) SFX.thud();
       break;
     }
@@ -1717,19 +1841,20 @@ function applyState(s) {
     } else if (s.phase === 'card' && (!prev || prev.phase !== 'card')) { V.mode = 'none'; showCard('hole'); }
     else if (s.phase === 'final' && (!prev || prev.phase !== 'final')) { V.mode = 'none'; P.key = ''; showCard('final'); SFX.cheer(); }
     if (HOLE) for (const p of s.pl) {
-      const B = getBall(p.id); B.dn = p.dn; B.slot = p.slot;
+      const B = getBall(p.id); B.dn = p.dn; B.slot = p.slot; B.hc = !!p.hc;
+      if (p.id !== ME.id && !B.driving) B.park = p.cp ? { x: p.cp[0], z: p.cp[1], yaw: p.cp[2] } : null;
       if (p.id === ME.id) continue;
       if (p.p) B.rest = { x: p.p[0], y: p.p[1], z: p.p[2] };
       else if (s.phase === 'play') { const ts = teeSpot(HOLE, p.slot); B.rest = { x: ts.x, y: groundY(HOLE, ts.x, ts.z) + BR, z: ts.z }; if (!B.anim) B.yaw = yawTo(ts.x, ts.z, HOLE.cup.x, HOLE.cup.z); }
       if (B.anim && B.anim.done && p.p) B.anim.origin = null;
     }
   }
-  if (s.phase !== 'play' && CART.driving) stopCart(true);
+  if (s.phase !== 'play' && (CART.driving || RUN.on)) endTravel(true);
   renderBoard(); renderCard(); renderLobby(); renderNet(); renderRules();
 }
 function setMenuStatus(s) { setText($('menuStatus'), s); }
 function leaveGame() {
-  if (CART.driving) stopCart(true);
+  if (CART.driving || RUN.on) endTravel(true);
   leaveNet(); S = null; P.key = ''; V.mode = 'none'; ME.id = 0;
   for (const id of [...BALLS.keys()]) dropBall(id);
   PQ.length = 0; curPrompt = null; $('prompt').hidden = true;
@@ -1798,8 +1923,27 @@ $('bSip').onclick = () => drink('sip');
 $('bShot').onclick = () => drink('shot');
 $('bCheers').onclick = () => toHost({ t: 'cheers' });
 $('bZoom').onclick = () => { V.zoom = !V.zoom; };
-$('bCart').onclick = () => { audio(); if (V.mode === 'cart') stopCart(); else startCart(); };
-$('cExit').onclick = () => stopCart();
+function travelKey() {
+  if (travelling()) { if (P.done || nearBall()) endTravel(); else toast('Get to your ball first, or skip for a sip.'); return; }
+  if (!canTravel()) return;
+  startTravel(V.mode === 'aim' ? { x: P.pos.x, z: P.pos.z, yaw: P.yaw } : { x: camera.position.x, z: camera.position.z, yaw: V.camYaw });
+}
+$('bCart').onclick = () => { audio(); travelKey(); };
+$('cExit').onclick = () => endTravel();
+$('cSkip').onclick = () => skipToBall();
+function funnelRelease() {
+  if (FUN.st !== 'hold') return;
+  const ms = now() - FUN.t0;
+  if (ms < 2000) { FUN.st = 'offer'; toast('That was way too fast. Hold the button the whole time you\'re funneling.'); return; }
+  FUN.st = 'done'; P.hasCart = true; SFX.cheer(); flash();
+  showBanner('🍺 Cart unlocked!', 'Funneled in ' + (ms / 1000).toFixed(1) + ' s', 2200);
+  toHost({ t: 'funnel', ms: Math.round(ms) });
+}
+$('fnHold').addEventListener('pointerdown', e => { e.preventDefault(); audio(); if ($('funnel').hidden || FUN.st === 'hold') return; FUN.st = 'hold'; FUN.t0 = now(); SFX.glug(); try { $('fnHold').setPointerCapture(e.pointerId); } catch (x) {} });
+for (const ev2 of ['pointerup', 'pointercancel', 'lostpointercapture']) $('fnHold').addEventListener(ev2, () => funnelRelease());
+$('fnHold').addEventListener('contextmenu', e => e.preventDefault());
+$('fnNo').onclick = () => { FUN.st = 'declined'; };
+$('fnChip').onclick = () => { FUN.st = 'offer'; };
 function honk() { SFX.horn(); toHost({ t: 'honk' }); }
 $('cHonk').onclick = honk;
 for (const [id, k] of [['cGas', 'gas'], ['cBrake', 'brake'], ['cLeft', 'left'], ['cRight', 'right']]) {
@@ -1835,6 +1979,7 @@ canvas.addEventListener('pointermove', e => {
   if (drag.id !== e.pointerId) return;
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY; drag.moved += Math.abs(dx) + Math.abs(dy);
   if (V.mode === 'cart') { CART.look = clamp(CART.look + dx * 0.004, -1.6, 1.6); V.look = clamp(V.look - dy * 0.003, -0.5, 0.5); return; }
+  if (V.mode === 'run') { RUN.yaw += dx * 0.004; V.look = clamp(V.look - dy * 0.003, -0.6, 0.6); return; }
   if (V.mode === 'aim' && MT.st === 'idle') {
     const fine = e.shiftKey || V.zoom ? 0.3 : 1, k = (e.pointerType === 'touch' ? 0.0042 : 0.0026) * fine;
     P.yaw += dx * k; V.look = clamp(V.look - dy * k * 0.8, -0.6, 0.7);
@@ -1856,7 +2001,7 @@ addEventListener('keydown', e => {
   keys.add(k);
   if (k === 'q') changeClub(-1); else if (k === 'e') changeClub(1);
   else if (k === 'b') drink('sip'); else if (k === 'n') drink('shot');
-  else if (k === 'f') { if (V.mode === 'cart') stopCart(); else startCart(); }
+  else if (k === 'f') travelKey();
   else if (k === 'g' && V.mode === 'cart') honk();
   else if (k === 'z') V.zoom = !V.zoom; else if (k === 'c') $('bCam').click(); else if (k === 'h') $('bCheers').click();
 });
@@ -1898,5 +2043,5 @@ function frame() {
 buildHole((Math.random() * 1e9) | 0, 0, 9);
 requestAnimationFrame(frame);
 // for automated tests
-window.__tipsy = { P, V, MT, BUZZ, CART, cartIn, startCart, stopCart, S: () => S, HOLE: () => HOLE, NET, HS, simulate, swingPress, drink, CLUBS, buildHole, camera, renderer, BALLS };
+window.__tipsy = { P, V, MT, BUZZ, CART, RUN, FUN, cartIn, startTravel, endTravel, skipToBall, funnelRelease, S: () => S, HOLE: () => HOLE, NET, HS, simulate, swingPress, drink, CLUBS, buildHole, camera, renderer, BALLS };
 })();

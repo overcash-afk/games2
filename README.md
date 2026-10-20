@@ -4,7 +4,7 @@ A fast, blocky multiplayer arena shooter for you and up to three friends, in a s
 
 **Play:** https://overcash-afk.github.io/games2/
 
-Also in this repo: **[Tipsy Links](golf/)**, first-person party golf for up to four friends where the more you drink, the farther you hit (and you can run your friends over with golf carts). Play it at https://overcash-afk.github.io/games2/golf/
+Also in this repo: **[Tipsy Links](golf/)**, first-person party golf for up to four friends where the more you drink, the farther you hit (funnel a beer for a golf cart, then run your friends over). Play it at https://overcash-afk.github.io/games2/golf/
 
 ## How to play with friends
 
