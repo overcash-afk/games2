@@ -123,11 +123,12 @@ function buzz() { const t = now(); BUZZ.b = Math.max(0, BUZZ.b - (t - BUZZ.at) /
 const powerMult = (putt) => 1 + (putt ? 0.075 : 0.15) * buzz();
 const LEVELS = [[0, 'Sober'], [1.5, 'Warming up'], [3.5, 'Buzzed'], [6, 'Tipsy'], [9, 'Loose'], [12, 'Drunk'], [15, 'Hammered'], [18, 'Legendary']];
 const buzzName = b => { let n = LEVELS[0][1]; for (const [v, s] of LEVELS) if (b >= v) n = s; return n; };
-function drink(kind, force) {
-  if (CART.driving && !force) { toast('🚔 No drinking and driving! Park the cart first.'); return; }
-  buzz(); BUZZ.b = Math.min(BUZZ_MAX, BUZZ.b + (kind === 'shot' ? 3 : 1));
+// skip: the sip that pays for skipping to your ball. It counts as a drink but adds no power.
+function drink(kind, skip) {
+  if (CART.driving && !skip) { toast('🚔 No drinking and driving! Park the cart first.'); return; }
+  buzz(); if (!skip) BUZZ.b = Math.min(BUZZ_MAX, BUZZ.b + (kind === 'shot' ? 3 : 1));
   if (kind === 'shot') { BUZZ.sh++; SFX.shot(); } else { BUZZ.si++; SFX.glug(); }
-  flash(); toHost({ t: 'drink', k: kind, bz: Math.round(BUZZ.b * 10) / 10 });
+  flash(); toHost({ t: 'drink', k: kind, bz: Math.round(BUZZ.b * 10) / 10, skip: skip ? 1 : 0 });
 }
 let flashT = 0;
 function flash() { flashT = now(); }
@@ -746,7 +747,7 @@ function endTravel(quiet) {
 }
 function skipToBall() {
   if (!(CART.driving || RUN.on) || P.done) return;
-  drink('sip', true); toast('⏭ Skipped to your ball. That cost a sip.');
+  drink('sip', true); toast('⏭ Skipped to your ball. That cost a sip (no power for this one).');
   if (CART.driving) { const ps = parkSpot(P.pos.x, P.pos.z, ME.slot); CART.p.set(ps.x, 0, ps.z); CART.yaw = ps.yaw; }
   endTravel();
 }
@@ -1661,7 +1662,7 @@ function hostRecv(id, m) {
     case 'aim': r.y = +m.y || 0; bcastExcept(id, { t: 'aim', id, y: r.y }); break;
     case 'drink': {
       if (m.k === 'shot') r.sh++; else r.si++; r.bz = +m.bz || 0;
-      bcast({ t: 'feed', m: m.k === 'shot' ? '🥃 ' + r.n + ' took a shot!' : '🍺 ' + r.n + ' took a sip' }); bcastState(); break;
+      bcast({ t: 'feed', m: m.k === 'shot' ? '🥃 ' + r.n + ' took a shot!' : m.skip ? '⏭ ' + r.n + ' took a sip to skip to their ball' : '🍺 ' + r.n + ' took a sip' }); bcastState(); break;
     }
     case 'bz': r.bz = +m.bz || 0; break;
     case 'ev': {

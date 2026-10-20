@@ -35,7 +35,7 @@ After every shot you travel to your ball yourself, in first person. A pop-up mar
 - **Funnel for a cart:** on each tee box you're offered a golf cart for that hole. To get it you funnel a beer: hold **Hold while you funnel** for the whole chug and let go when it's empty (anything under 2 seconds doesn't count). Everyone sees your time, and the final awards include Fastest Funnel. The funnel adds **no shot power**, only the cart. The offer lasts until your tee shot.
 - **With a cart** you drive to your shots (▲ ▼ ◀ ▶ or W/A/S/D, 📯 / G to honk; steering gets loose when you're drunk) and can **run people over**: hit a friend standing at their ball or running to it and they go flying, their swing gets knocked off line, and your house rules decide who drinks. Trees and other carts stop you. Drive into a pond and the cart sinks: you're on foot for the rest of the hole.
 - **Without a cart** you run, at about half a cart's speed. You can't hit anyone, but carts can hit you. Running drunk is messy: your line wanders, you lurch sideways and sometimes trip. Running into a pond counts as a swim.
-- When you're close to your ball, press **⛳ Play shot** (or F). **⏭ Skip** jumps you straight to your ball, but costs a sip.
+- When you're close to your ball, press **⛳ Play shot** (or F). **⏭ Skip** jumps you straight to your ball, but costs a sip. That sip counts toward your drink totals but adds no shot power.
 - After you hole out you can keep driving or running around the course (🚗 / 🏃 button) while the others finish.
 
 ## How to swing
