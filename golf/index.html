@@ -172,6 +172,11 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
 #fnHold{width:100%;min-height:58px;font-size:19px;touch-action:none;-webkit-touch-callout:none}
 #fnHold.holding{background:linear-gradient(180deg,#9be27a,#3fa34d);border-color:#7fd05a;color:#062a10}
 #fnChip{position:absolute;left:50%;top:calc(70px + var(--safe-t));transform:translateX(-50%);border-color:var(--beer);background:rgba(8,22,14,.8)}
+#bAtk{position:absolute;right:12px;top:44%;width:66px;height:66px;border-radius:50%;cursor:pointer;border:3px solid #fff4;background:radial-gradient(circle at 35% 30%,#ffb08a,#e2462e 75%);color:#fff;font-size:24px;line-height:1;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 6px 16px rgba(0,0,0,.45);touch-action:manipulation;font-family:var(--display)}
+#bAtk small{font-size:14px;font-family:var(--display)}
+#bAtk.armed{font-size:18px;animation:pulse 0.5s ease-in-out infinite alternate;border-color:#fff}
+#xhair{position:fixed;left:50%;top:50%;width:44px;height:44px;margin:-22px 0 0 -22px;border:3px solid #ff6a2a;border-radius:50%;pointer-events:none;z-index:9;box-shadow:0 0 0 2px rgba(0,0,0,.4)}
+#xhair::after{content:'';position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px 0 0 -3px;background:#ff6a2a;border-radius:50%}
 #ballPop{position:absolute;transform:translate(-50%,-100%);pointer-events:none;animation:bob .9s ease-in-out infinite alternate}
 #ballPop .bp{display:flex;flex-direction:column;align-items:center;background:var(--accent);color:#2a1503;border-radius:14px;padding:5px 12px;font-size:13px;box-shadow:0 6px 16px rgba(0,0,0,.4);position:relative}
 #ballPop .bp b{font-family:var(--display);font-weight:400;font-size:17px}
@@ -263,6 +268,8 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
   <div id="banner" hidden><div class="b1" id="bn1"></div><div class="b2" id="bn2"></div></div>
   <button class="btn small" id="skipBtn" hidden>Skip ⏩</button>
   <div id="specBar" class="hcard" hidden><button class="ib" id="specPrev">◀</button><span id="specName">Watching</span><button class="ib" id="specNext">▶</button></div>
+  <button id="bAtk" title="Attack ball: tap to aim, tap again to fire (X)" hidden>🎯<small>5</small></button>
+  <div id="xhair" hidden></div>
   <div id="funnel" class="hcard" hidden>
     <div class="pe">🍺</div><div class="pt">Funnel for a golf cart?</div>
     <div class="ps">Funnel a beer to get a cart for this hole. Drive to your shots and run people over. It adds no shot power. Skip it and you run between shots (and can't hit anyone).</div>
@@ -274,7 +281,7 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
   <div id="prompt" class="hcard" hidden><div class="pe" id="prE">🍺</div><div class="pt" id="prT">Drink!</div><div class="ps" id="prS"></div><div class="pc" id="prC"></div><div class="row"><button class="btn primary" id="prYes">Done 🍺</button><button class="btn" id="prNo">Skip</button></div></div>
   <div id="cartCtl" hidden>
     <div class="cc" id="ccL"><button class="pedal" id="cLeft">◀</button><button class="pedal" id="cRight">▶</button></div>
-    <div id="ccMid" class="hcard"><div id="cSpeed">0 mph</div><div id="cDist"></div><div class="row" style="justify-content:center;gap:6px"><button class="btn small" id="cHonk" title="Honk (G)">📯</button><button class="btn small" id="cSkip" title="Jump to your ball for a sip">⏭ Skip (sip)</button><button class="btn small primary" id="cExit" hidden>⛳ Play shot</button></div></div>
+    <div id="ccMid" class="hcard"><div id="cSpeed">0 mph</div><div id="cDist"></div><div class="row" style="justify-content:center;gap:6px"><button class="btn small" id="cHonk" title="Honk (G)">📯</button><button class="btn small" id="cOut" title="Get out of the cart (E)">🚶 Get out</button><button class="btn small primary" id="cIn" title="Get in your cart (E)" hidden>🚗 Get in</button><button class="btn small" id="cSkip" title="Jump to your ball for a sip">⏭ Skip (sip)</button><button class="btn small primary" id="cExit" hidden>⛳ Play shot</button></div></div>
     <div class="cc" id="ccR"><button class="pedal" id="cBrake">▼</button><button class="pedal gas" id="cGas">▲</button></div>
   </div>
   <div id="bottom">
@@ -329,6 +336,8 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
     <div id="hostOpts">
       <h3>Course</h3>
       <div class="row"><b id="courseName" class="grow">—</b><button class="btn small" id="reseedBtn">🎲 New course</button></div>
+      <h3>Game</h3>
+      <div class="row"><div class="seg" id="modeSeg"><button data-v="stroke">Stroke play</button><button data-v="time">Time trial ⏱</button></div><span class="muted">Time trial: a clock runs on every hole and strokes don't count. Fastest total time wins; 5 minutes max per hole.</span></div>
       <h3>Holes</h3>
       <div class="seg" id="holesSeg"><button data-v="3">3</button><button data-v="9">9</button><button data-v="18">18</button></div>
       <h3>House rules</h3>
@@ -337,7 +346,7 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
       <div class="row" style="margin-top:18px"><button class="btn primary grow" id="startBtn">Tee off ⛳</button><button class="btn" id="lobbyLeave">Leave</button></div>
     </div>
     <div id="guestWait" hidden>
-      <h3>Course</h3><div><b id="courseNameG">—</b> · <span id="holesG"></span> holes</div>
+      <h3>Course</h3><div><b id="courseNameG">—</b> · <span id="holesG"></span></div>
       <h3>House rules</h3><div id="rulesList"></div>
       <p class="muted">Waiting for the host to tee off…</p>
       <button class="btn" id="lobbyLeave2">Leave</button>
@@ -375,7 +384,7 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
       <div class="row"><button class="btn small" id="skipHoleBtn">End this hole for everyone</button></div>
     </div>
     <h3>Controls</h3>
-    <p class="muted">Drag (or A/D, arrow keys) to aim; hold Shift for fine aim. Drag up/down to look. Q/E or the arrows change club. Space or SWING: first press starts the backswing, second sets power, third sets accuracy when the needle comes back to the white line. Too early slices right, too late hooks left. B sips, N takes a shot. Z zooms, C toggles ball cam, Tab shows the scorecard. After each shot you travel to your ball: W/S or ▲▼ to go, A/D or ◀▶ (or drag) to steer, G honks. Funnel a beer on the tee for a cart; otherwise you run. When you reach your ball, press ⛳ Play shot (or F); ⏭ Skip jumps there for a sip. In a cart, hit a friend to run them over.</p>
+    <p class="muted">Drag (or A/D, arrow keys) to aim; hold Shift for fine aim. Drag up/down to look. Q/E or the arrows change club. Space or SWING: first press starts the backswing, second sets power, third sets accuracy when the needle comes back to the white line. Too early slices right, too late hooks left. B sips, N takes a shot. Z zooms, C toggles ball cam, Tab shows the scorecard. After each shot you travel to your ball: W/S or ▲▼ to go, A/D or ◀▶ (or drag) to steer, G honks. Funnel a beer on the tee for a cart; otherwise you run. When you reach your ball, press ⛳ Play shot (or F); ⏭ Skip jumps there for a sip. In a cart, hit a friend to run them over; E (or 🚶 Get out / 🚗 Get in) leaves and boards your cart, which stays where you leave it. 🎯 (or X) arms an attack ball, five per hole: a crosshair appears, then tap again or press Space to fire it straight where you're looking. A hit knocks the player down or ruins their swing. Attack balls never count as strokes.</p>
     <div class="row" style="margin-top:14px"><button class="btn small" id="pickupBtn">Pick up (take max score)</button><button class="btn danger small" id="leaveBtn">Leave game</button></div>
   </div>
 </div>
