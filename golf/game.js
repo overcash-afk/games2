@@ -101,7 +101,7 @@ const SURF = {
   water: { name: 'Water', e: 0, f: 0, mu: 1, lie: 1 },
   oob: { name: 'Out of bounds', e: 0.2, f: 0.5, mu: 0.35, lie: 0.8 },
 };
-const G = 9.81, KD = 0.0047, BR = 0.03, CUP_R = 0.1, SIM_DT = 1 / 240, SPIN_DECAY = Math.exp(-SIM_DT / 5);
+const G = 9.81, KD = 0.0047, BR = 0.03, CUP_R = 0.13, SIM_DT = 1 / 240, SPIN_DECAY = Math.exp(-SIM_DT / 5);
 function flatCarry(c, v0) {
   let pz = 0, py = 0, vy = v0 * Math.sin(c.ang * D2R), vz = -v0 * Math.cos(c.ang * D2R), L = c.lift;
   for (let i = 0; i < 30 / SIM_DT; i++) {
@@ -205,8 +205,9 @@ function genHole(seed, idx, nh) {
   H.fringe = { x: gx, z: gz, rx: H.green.rx + 2.2, rz: H.green.rz + 2.2, rot: H.green.rot };
   { const a = R() * Math.PI * 2, f = rr(0.15, 0.55), u = Math.cos(a) * H.green.rx * f, v = Math.sin(a) * H.green.rz * f, c = Math.cos(H.green.rot), s = Math.sin(H.green.rot);
     H.cup = { x: gx + u * c - v * s, z: gz + u * s + v * c }; }
-  H.gTilt = [rr(-0.022, 0.022), rr(-0.022, 0.022)];
-  H.gBump = { x: gx + rr(-6, 6), z: gz + rr(-5, 5), h: rr(-0.25, 0.3), r: rr(4, 7) };
+  // gentle greens: a little tilt and a soft bump, so putts break but stay makeable
+  H.gTilt = [rr(-0.009, 0.009), rr(-0.009, 0.009)];
+  H.gBump = { x: gx + rr(-6, 6), z: gz + rr(-5, 5), h: rr(-0.1, 0.12), r: rr(5, 8) };
   // fairway
   const w = par === 3 ? 9 : rr(13, 19), s0 = par === 3 ? Math.max(20, H.total - 34) : rr(45, 75), s1 = H.total - 6;
   const fp = []; for (let i = 0; i < rs.s.length; i++) if (rs.s[i] >= s0 && rs.s[i] <= s1) fp.push(rs.p[2 * i], rs.p[2 * i + 1]);
@@ -419,8 +420,8 @@ function simulate(H, from, o) {
         const dc = Math.hypot(px - cx, pz - cz);
         if (dc < CUP_R) {
           const hs = Math.hypot(vx, vz);
-          if (hs < 1.6) { out = 'holed'; px = cx; pz = cz; py -= 0.06; ev.push([t, 'cup']); break; }
-          if (hs < 2.7 && !lipped) { lipped = true; const a = (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.6), c = Math.cos(a), s = Math.sin(a); const nx = (vx * c - vz * s) * 0.55, nz = (vx * s + vz * c) * 0.55; vx = nx; vz = nz; ev.push([t, 'lip']); }
+          if (hs < 2.1) { out = 'holed'; px = cx; pz = cz; py -= 0.06; ev.push([t, 'cup']); break; }
+          if (hs < 3.2 && !lipped) { lipped = true; const a = (Math.random() < 0.5 ? -1 : 1) * (0.5 + Math.random() * 0.6), c = Math.cos(a), s = Math.sin(a); const nx = (vx * c - vz * s) * 0.55, nz = (vx * s + vz * c) * 0.55; vx = nx; vz = nz; ev.push([t, 'lip']); }
         }
         const th = H.trees.length ? treeAt(H, px, py, pz) : null;
         if (th && th.trunk) { const nx = th.dx / (th.d || 1), nz = th.dz / (th.d || 1), v2 = vx * nx + vz * nz; if (v2 < 0) { vx = (vx - 2 * v2 * nx) * 0.4; vz = (vz - 2 * v2 * nz) * 0.4; } px = th.t.x + nx * (th.t.tr + BR + 0.01); pz = th.t.z + nz * (th.t.tr + BR + 0.01); }
@@ -913,7 +914,10 @@ function teeSpot(H, slot) { const c = Math.cos(H.teeA), s = Math.sin(H.teeA), u 
 function distToPin(x, z) { return Math.hypot(HOLE.cup.x - x, HOLE.cup.z - z); }
 function yawTo(x0, z0, x1, z1) { return Math.atan2(x1 - x0, -(z1 - z0)); }
 function lieMult(ci, lie) { if (CLUBS[ci].putt) return 1; if (lie === 'sand') return CLUBS[ci].id === 'SW' ? 0.88 : 0.6; return SURF[lie] ? SURF[lie].lie : 1; }
-const clubReach = ci => CLUBS[ci].carry * lieMult(ci, P.lie) * powerMult(CLUBS[ci].putt);
+// The putter's full stroke scales with the putt: about 1.6 times the distance to the hole (4 to 18 m).
+const puttRange = () => clamp(distToPin(P.pos.x, P.pos.z) * 1.6, 4, 18) * powerMult(true);
+const puttLie = () => P.lie === 'green' ? 1 : 0.85;
+const clubReach = ci => CLUBS[ci].putt ? puttRange() : CLUBS[ci].carry * lieMult(ci, P.lie) * powerMult(false);
 function autoClub() {
   const d = distToPin(P.pos.x, P.pos.z);
   if (P.lie === 'green' || (P.lie === 'fringe' && d < 16) || d < 7) return PUTTER;
@@ -935,7 +939,7 @@ function startHole(s) {
   P.key = key; P.strokes = 0; P.putts = 0; P.done = false; P.lie = 'tee'; P.firstShot = true; P.pend = null;
   const ts = teeSpot(HOLE, ME.slot); P.pos = { x: ts.x, y: groundY(HOLE, ts.x, ts.z) + BR, z: ts.z }; P.prev = { ...P.pos };
   if (CART.driving || RUN.on) endTravel(true);
-  P.hasCart = false; CART.park = null; FUN.st = 'offer'; P.atk = 5; ATK.armed = false; for (const A of ATKS) A.dead = true;
+  P.hasCart = false; CART.park = null; FUN.st = 'offer'; P.atk = 5; for (const A of ATKS) A.dead = true;
   for (const B of BALLS.values()) { resetBallVisual(B); B.rest = null; B.driving = false; B.running = false; B.ct = null; B.rp = null; B.park = null; B.flatT = 0; }
   P.club = autoClub(); P.yaw = autoAim(); V.look = 0;
   MT.st = 'idle'; MT.follow = 0; MT.swingA = 0;
@@ -952,7 +956,7 @@ function beginAim() {
 // ----- swinging -----
 const ZONE = 0.04, ZONE_OK = 0.1, METER_MIN = -0.15;
 function swingPress() {
-  if (ATK.armed) { fireAtk(); return; }
+  if (V.mode === 'atk') { audio(); if (MT.st === 'idle') { MT.st = 'up'; MT.x = 0; MT.t = 0; MT.pow = 0; MT.msg = ''; } else if (MT.st === 'up') hitAtk(); return; }
   if (V.mode !== 'aim') { if (V.mode === 'intro') beginAim(); return; }
   audio();
   if (MT.st === 'idle') { MT.st = 'up'; MT.x = 0; MT.t = 0; MT.pow = 0; MT.msg = ''; }
@@ -963,7 +967,7 @@ function updateMeter(dt) {
   if (MT.st !== 'up' && MT.st !== 'down') return;
   const b = drunk(), sp = 1 + 0.05 * b; MT.t += dt;
   const putt = CLUBS[P.club].putt;
-  if (MT.st === 'up') { MT.x += dt * (putt ? 0.585 : 0.72) * sp; if (MT.x >= 1) { MT.x = 1; MT.pow = 1; MT.st = 'down'; SFX.whoosh(); } }
+  if (MT.st === 'up') { MT.x += dt * (putt ? 0.585 : 0.72) * sp; if (MT.x >= 1) { MT.x = 1; MT.pow = 1; if (V.mode === 'atk') { MT.disp = 1; hitAtk(); return; } MT.st = 'down'; SFX.whoosh(); } }
   else { MT.x -= dt * 1.125 * sp; }
   const jit = (Math.sin(MT.t * 13.1) * 0.6 + Math.sin(MT.t * 7.3 + 1) * 0.4) * 0.006 * b;
   MT.disp = clamp(MT.x + jit, METER_MIN, 1);
@@ -977,15 +981,15 @@ function takeShot() {
   const topped = !putt && Math.abs(MT.acc) > 0.13;
   if (topped) verdict = 'Topped it!';
   // the drunker you are, the likelier a shank (or a yipped putt)
-  const shank = b >= 2 && Math.random() < Math.min(putt ? 0.15 : 0.3, b * (putt ? 0.008 : 0.015));
+  const shank = b >= 2 && Math.random() < Math.min(putt ? 0.08 : 0.3, b * (putt ? 0.004 : 0.015));
   if (shank) verdict = putt ? 'Yipped it!' : 'SHANK!';
   MT.msg = verdict; MT.msgT = t;
   const M = powerMult(putt);
-  let yaw = P.yaw + swayYaw(t, putt) + e * (putt ? 0.05 : 0.06) + gauss() * 0.004 * b * (putt ? 0.4 : 1);
-  if (shank) yaw += (Math.random() < 0.75 ? 1 : -1) * (putt ? 0.15 + Math.random() * 0.2 : 0.6 + Math.random() * 0.5);
+  let yaw = P.yaw + swayYaw(t, putt) + e * (putt ? 0.025 : 0.06) + gauss() * 0.004 * b * (putt ? 0.2 : 1);
+  if (shank) yaw += (Math.random() < 0.75 ? 1 : -1) * (putt ? 0.08 + Math.random() * 0.1 : 0.6 + Math.random() * 0.5);
   let res;
   if (putt) {
-    const d = club.carry * MT.pow * M * (P.lie === 'green' ? 1 : 0.85);
+    const d = puttRange() * MT.pow * puttLie(); void M;
     res = simulate(HOLE, P.pos, { putt: true, v0: Math.sqrt(2 * SURF.green.mu * G * d), yaw });
     SFX.putt();
   } else {
@@ -1031,7 +1035,7 @@ function finishShot() {
   if (R.shank) ev('shank');
   if (res.ev.some(x => x[1] === 'tree')) ev('tree');
   if (res.out === 'rest' && P.lie === 'sand' && !R.putt) ev('bunker');
-  if (!P.done && P.lie === 'green' && distToPin(P.pos.x, P.pos.z) < 0.6) {
+  if (!P.done && P.lie === 'green' && distToPin(P.pos.x, P.pos.z) < 0.9) {
     P.strokes++; P.putts++; P.done = true; toast('Tap-in'); SFX.cup(); P.pos = { x: H.cup.x, y: groundY(H, H.cup.x, H.cup.z) - 0.05, z: H.cup.z };
   }
   if (!P.done && !timeMode() && P.strokes >= par + 4) { P.done = true; P.strokes = par + 4; toast('Picked up at ' + P.strokes); }
@@ -1088,6 +1092,9 @@ function updateCamera(dt, t) {
     const tg = _v2.set(ahead.x, groundY(H, ahead.x, ahead.z), ahead.z); [V.camYaw, V.camPitch] = lookFrom(V.camPos, tg);
     roll = 0; wob = 0;
     if (k >= 1) beginAim();
+  } else if (V.mode === 'atk') {
+    V.camPos.copy(eyeFor(ATK.x, 0, ATK.z, ATK.yaw, false));
+    V.camYaw = ATK.yaw + swayYaw(t, false); V.camPitch = -0.06 + V.look;
   } else if (V.mode === 'cart') {
     const c = BALLS.get(ME.id).cart; c.updateMatrixWorld(true);
     V.camPos.set(-0.3, 1.5, 0.12).applyMatrix4(c.matrixWorld);
@@ -1174,6 +1181,17 @@ function updateAimGuides(t) {
   const sc = putt ? 0.35 : Math.max(1.2, reach / 45);
   tgtRing.position.set(x, y + 0.06, z); tgtRing.scale.set(sc, 1, sc);
   const m = new THREE.Matrix4(), n = putt ? 24 : 16;
+  if (putt && P.lie === 'green') {
+    const now_ = performance.now();
+    if (!V.pp || now_ - V.pp.at > 150 || Math.abs(V.pp.yaw - yaw) > 0.003 || V.pp.x !== P.pos.x) {
+      const r = simulate(HOLE, P.pos, { putt: true, v0: Math.sqrt(2 * SURF.green.mu * G * Math.max(0.3, distToPin(P.pos.x, P.pos.z))), yaw });
+      V.pp = { at: now_, yaw, x: P.pos.x, pts: r.pts };
+    }
+    const pts = V.pp.pts, cnt = pts.length / 3, upto = Math.max(2, Math.floor(cnt * 0.55));
+    for (let i = 0; i < 24; i++) { const j = Math.min(cnt - 1, Math.round((i + 1) / 24 * upto)); m.makeScale(0.03, 1, 0.03); m.setPosition(pts[j * 3], pts[j * 3 + 1] + 0.01, pts[j * 3 + 2]); aimDots.setMatrixAt(i, m); }
+    aimDots.instanceMatrix.needsUpdate = true; tgtRing.visible = false;
+    targetInfo = { x, y, z, d: reach }; return;
+  }
   for (let i = 0; i < 24; i++) {
     const f = (i + 1) / (n + 1), px = P.pos.x + dx * reach * f, pz = P.pos.z + dz * reach * f, r = putt ? 0.035 : 0.08 + reach * f * 0.006;
     m.makeScale(r, 1, r); m.setPosition(px, groundY(HOLE, px, pz) + 0.04, pz); aimDots.setMatrixAt(i, i < n ? m : m.makeScale(0, 0, 0));
@@ -1185,11 +1203,11 @@ function updateGame(dt, t) {
   const H = HOLE;
   // own swing rig
   const putt = CLUBS[P.club].putt;
-  const CR = showClub(P.club);
-  rig.visible = (V.mode === 'aim' || (V.mode === 'flight' && t - V.t0 < 1400)) && !P.done && !SET.cam || (V.mode === 'flight' && SET.cam && t - V.t0 < 300);
+  const atk = V.mode === 'atk', CR = showClub(atk ? 3 : P.club);
+  rig.visible = atk || (V.mode === 'aim' || (V.mode === 'flight' && t - V.t0 < 1400)) && !P.done && !SET.cam || (V.mode === 'flight' && SET.cam && t - V.t0 < 300);
   if (rig.visible) {
-    const o = V.mode === 'flight' ? P.prev : P.pos; const gy = groundY(H, o.x, o.z);
-    const yaw = V.mode === 'aim' ? P.yaw + swayYaw(t, putt) : P.yaw;
+    const o = atk ? ATK : V.mode === 'flight' ? P.prev : P.pos; const gy = groundY(H, o.x, o.z);
+    const yaw = atk ? ATK.yaw + swayYaw(t, false) : V.mode === 'aim' ? P.yaw + swayYaw(t, putt) : P.yaw;
     rig.position.set(o.x, gy, o.z); rig.rotation.set(0, -yaw, 0);
     let a = 0;
     if (MT.st === 'up' || MT.st === 'down') { MT.swingA = lerp(MT.swingA, Math.max(0, MT.x) * CR.max, 1 - Math.exp(-dt * 18)); a = MT.swingA; }
@@ -1250,28 +1268,49 @@ function updateGame(dt, t) {
 }
 
 // ============================ attack balls ============================
-// Five per hole, in either mode; they never count as strokes. Arm one and a crosshair appears;
-// fire and it flies fast and flat straight where you're looking. The shooter's browser decides
-// hits, with a generous hit zone; a hit knocks the player down for a moment.
-const ATK = { armed: false, armT: 0 };
+// Five per hole, in either mode; they never count as strokes. Tap 🎯 to drop one at your feet and
+// line it up with the crosshair, then swing: one tap starts the backswing, the next hits it (the
+// needle sets the speed). It flies straight at whatever's under the crosshair, aiming at whoever is
+// closest to that line, with no slice. The shooter's browser decides hits, with a generous hit zone.
+const ATK = { from: 'aim', x: 0, z: 0, yaw: 0, hitAt: 0 };
 const ATKS = [];
 const atkGeo = new THREE.SphereGeometry(0.2, 14, 10), atkMat = new THREE.MeshBasicMaterial({ color: 0xff6a2a });
+const atkBall = new THREE.Mesh(atkGeo, atkMat); atkBall.visible = false; scene.add(atkBall);
 const canAtk = () => !!(HOLE && S && S.phase === 'play' && P.atk > 0 && ((V.mode === 'aim' && MT.st === 'idle') || V.mode === 'run' || V.mode === 'cart' || V.mode === 'spec' || V.mode === 'done'));
-function armAtk() {
-  if (ATK.armed) { fireAtk(); return; }
+function startAtk() {
+  if (V.mode === 'atk') { if (MT.st !== 'hit') stopAtk(); return; }
   if (!canAtk()) return;
-  ATK.armed = true; ATK.armT = now(); SFX.tick();
-  if (V.mode === 'aim') V.look = -(CLUBS[P.club].putt ? PITCH_PUTT : PITCH_FULL) - 0.03; // eyes up to the horizon
+  if (V.mode === 'cart') getOutOfCart();
+  const from = V.mode === 'aim' ? 'aim' : V.mode === 'run' ? 'run' : 'spec';
+  let x, z, yaw;
+  if (from === 'aim') { yaw = P.yaw; x = P.pos.x + Math.cos(yaw) * 0.6; z = P.pos.z + Math.sin(yaw) * 0.6; } // beside your own ball
+  else { const o = from === 'run' ? RUN.p : camera.position; yaw = from === 'run' ? RUN.yaw : V.camYaw; x = o.x + Math.sin(yaw) * EYE_FULL[0]; z = o.z - Math.cos(yaw) * EYE_FULL[0]; }
+  Object.assign(ATK, { from, x, z, yaw, hitAt: 0 });
+  V.mode = 'atk'; V.look = 0; V.zoom = false; MT.st = 'idle'; MT.follow = 0; MT.swingA = 0; SFX.tick();
 }
-function disarmAtk() { if (!ATK.armed) return; ATK.armed = false; if (V.mode === 'aim') V.look = 0; }
-function fireAtk() {
-  if (!ATK.armed || !canAtk()) { disarmAtk(); return; }
-  disarmAtk(); P.atk--;
-  const pitch = V.camPitch + 0.07, cp = Math.cos(pitch), d = [Math.sin(V.camYaw) * cp, Math.sin(pitch), -Math.cos(V.camYaw) * cp];
-  const o = camera.position, p0 = [o.x + d[0] * 1.2, o.y - 0.2 + d[1] * 1.2, o.z + d[2] * 1.2], v = d.map(x => x * 60);
+function stopAtk() {
+  if (V.mode !== 'atk') return;
+  MT.st = 'idle'; V.look = 0;
+  if (ATK.from === 'aim' && !P.done) beginAim(); else if (ATK.from === 'run' && RUN.on) V.mode = 'run'; else { V.mode = 'spec'; pickSpec(0); }
+}
+function hitAtk() {
+  if (V.mode !== 'atk' || MT.st === 'hit' || P.atk <= 0) return;
+  const pow = clamp(MT.disp, 0.15, 1); MT.pow = pow; MT.acc = 0; MT.st = 'hit'; MT.follow = 0.0001; ATK.hitAt = now(); P.atk--;
+  // the target: whoever is closest to the crosshair line, otherwise a point 60 m out along it
+  const c = camera.position, cp = Math.cos(V.camPitch), f = new THREE.Vector3(Math.sin(V.camYaw) * cp, Math.sin(V.camPitch), -Math.cos(V.camYaw) * cp);
+  let tgt = c.clone().addScaledVector(f, 60), best = 6;
+  for (const B of BALLS.values()) {
+    if (B.id === ME.id) continue;
+    const q = B.driving && B.cart.visible ? B.cart.position : B.standing && B.avatar ? B.avatar.position : null; if (!q) continue;
+    const w = new THREE.Vector3(q.x, q.y + 1, q.z).sub(c), along = w.dot(f); if (along < 2 || along > 160) continue;
+    const off = w.addScaledVector(f, -along).length(); if (off < best) { best = off; tgt = new THREE.Vector3(q.x, q.y + 1, q.z); }
+  }
+  const p0 = new THREE.Vector3(ATK.x, groundY(HOLE, ATK.x, ATK.z) + 0.2, ATK.z), d = tgt.sub(p0), dist = Math.hypot(d.x, d.z), sp = 28 + 42 * pow;
+  // straight at the target, plus just enough loft to cover the drop on the way
+  const v = d.normalize().multiplyScalar(sp); v.y += 0.5 * G * dist / sp;
   const id = Math.random().toString(36).slice(2, 8);
-  spawnAtk(id, p0, v, true); SFX.hit();
-  toHost({ t: 'atk', a: id, p: p0.map(x => +x.toFixed(2)), v: v.map(x => +x.toFixed(2)) });
+  spawnAtk(id, [p0.x, p0.y, p0.z], [v.x, v.y, v.z], true); SFX.hit(); MT.msg = '🎯 Fore!'; MT.msgT = now();
+  toHost({ t: 'atk', a: id, p: [p0.x, p0.y, p0.z].map(x => +x.toFixed(2)), v: [v.x, v.y, v.z].map(x => +x.toFixed(2)) });
 }
 function spawnAtk(id, p0, v, mine) {
   if (!Array.isArray(p0) || !Array.isArray(v) || p0.length < 3 || v.length < 3) return;
@@ -1296,7 +1335,9 @@ function updateAtks(dt) {
     A.mesh.position.copy(A.p); A.mesh.scale.setScalar(1 + Math.sin(A.t * 30) * 0.12);
   }
   for (let i = ATKS.length - 1; i >= 0; i--) if (ATKS[i].dead) { scene.remove(ATKS[i].mesh); ATKS.splice(i, 1); }
-  if (ATK.armed && (!canAtk() || now() - ATK.armT > 10000)) disarmAtk();
+  atkBall.visible = V.mode === 'atk' && MT.st !== 'hit';
+  if (atkBall.visible) { atkBall.scale.setScalar(0.5); atkBall.position.set(ATK.x, groundY(HOLE, ATK.x, ATK.z) + 0.1, ATK.z); }
+  if (V.mode === 'atk' && ATK.hitAt && now() - ATK.hitAt > 800) stopAtk();
 }
 
 // ============================ HUD ============================
@@ -1331,17 +1372,19 @@ function updateHud(t) {
   $('buzzFill').style.width = (b / BUZZ_MAX * 100).toFixed(1) + '%';
   // meter
   const aiming = V.mode === 'aim';
-  $('swingBtn').disabled = !(aiming || V.mode === 'intro');
-  setText($('swingBtn'), MT.st === 'up' ? 'POWER' : MT.st === 'down' ? 'HIT!' : 'SWING');
+  $('swingBtn').disabled = !(aiming || V.mode === 'intro' || V.mode === 'atk');
+  setText($('swingBtn'), V.mode === 'atk' ? (MT.st === 'up' ? 'HIT!' : 'SWING') : MT.st === 'up' ? 'POWER' : MT.st === 'down' ? 'HIT!' : 'SWING');
   $('clubPrev').disabled = $('clubNext').disabled = !(aiming && MT.st === 'idle');
   const disp = MT.st === 'up' || MT.st === 'down' ? MT.disp : MT.st === 'hit' ? MT.acc : 0;
   $('mNeedle').style.left = meterPct(disp) + '%';
   $('mFill').style.width = MT.st === 'up' ? (meterPct(disp) - meterPct(0)) + '%' : '0%';
   $('mFill').style.left = meterPct(0) + '%';
+  const tick = aiming && c.putt && P.pos && !P.done; $('mTick').hidden = !tick;
+  if (tick) $('mTick').style.left = meterPct(Math.min(1, distToPin(P.pos.x, P.pos.z) / (puttRange() * puttLie()))) + '%';
   const showPow = MT.st === 'down' || MT.st === 'hit'; $('mPow').hidden = !showPow; if (showPow) $('mPow').style.left = meterPct(MT.pow) + '%';
-  setText($('mHint'), MT.st === 'up' ? 'Press to set power' : MT.st === 'down' ? 'Press on the white line!' : aiming ? 'Press SWING (Space) to start' : '');
+  setText($('mHint'), V.mode === 'atk' ? (MT.st === 'up' ? 'Tap again to hit it!' : 'Attack ball: tap SWING, then tap to hit') : MT.st === 'up' ? 'Press to set power' : MT.st === 'down' ? 'Press on the white line!' : aiming ? 'Press SWING (Space) to start' : '');
   setText($('mMsg'), t - MT.msgT < 2200 ? MT.msg : '');
-  $('meterWrap').style.opacity = aiming || V.mode === 'flight' ? 1 : 0.35;
+  $('meterWrap').style.opacity = aiming || V.mode === 'flight' || V.mode === 'atk' ? 1 : 0.35;
   $('skipBtn').hidden = !(V.mode === 'flight' && t - V.t0 > 600);
   const spec = V.mode === 'spec' && V.spec; $('specBar').hidden = !(V.mode === 'spec' && specCandidates().length);
   if (spec) setText($('specName'), 'Watching ' + playerName(V.spec));
@@ -1359,8 +1402,10 @@ function updateHud(t) {
     if (RUN.on && P.hasCart && !nearCart()) setText($('cDist'), $('cDist').textContent + ' · cart ' + fmtDist(Math.hypot(cartSpot().x - RUN.p.x, cartSpot().z - RUN.p.z)));
   }
   // attack balls
-  $('bAtk').hidden = !(S.phase === 'play' && (canAtk() || ATK.armed)); $('bAtk').classList.toggle('armed', ATK.armed);
-  setHTML($('bAtk'), ATK.armed ? 'FIRE' : '🎯<small>' + P.atk + '</small>'); $('xhair').hidden = !ATK.armed;
+  const am = V.mode === 'atk';
+  $('bAtk').hidden = !(S.phase === 'play' && (canAtk() || am)); $('bAtk').classList.toggle('armed', am);
+  setHTML($('bAtk'), am ? '✕<small>cancel</small>' : '🎯<small>' + P.atk + '</small>'); $('xhair').hidden = !am;
+  if (am) { setText($('clubName').firstChild, 'Attack ball 🎯'); setText($('clubName').lastChild, P.atk + ' left this hole'); setText($('iLine2'), 'Line up the crosshair, then swing'); }
   // tee-box funnel
   const fa = S.phase === 'play' && V.mode === 'aim' && !P.hasCart && P.strokes === 0 && P.lie === 'tee' && FUN.st !== 'done';
   $('funnel').hidden = !(fa && (FUN.st === 'offer' || FUN.st === 'hold')); $('fnChip').hidden = !(fa && FUN.st === 'declined');
@@ -1923,14 +1968,14 @@ function clientRecv(m) {
     case 'timeout':
       if (P.done || !S || S.phase !== 'play') break;
       if (CART.driving || RUN.on) endTravel(true);
-      P.done = true; MT.st = 'idle'; ATK.armed = false; showBanner("⏱ Time's up!", fmtTime(TIME_CAP) + ' for this hole', 3000); SFX.aww(); V.mode = 'done'; V.t0 = now(); break;
+      P.done = true; MT.st = 'idle'; showBanner("⏱ Time's up!", fmtTime(TIME_CAP) + ' for this hole', 3000); SFX.aww(); V.mode = 'done'; V.t0 = now(); break;
     case 'atk': if (HOLE && S && S.phase === 'play' && m.id !== ME.id) spawnAtk(m.a, m.p, m.v, false, m.id); break;
     case 'bonk': {
       const A = ATKS.find(a => a.id === m.a); if (A) A.dead = true;
       const B = BALLS.get(m.id); if (B) { B.flatT = now(); B.flatKind = 'bonk'; B.flatDir = [m.dx, m.dz]; }
       if (m.id === ME.id) {
         showBanner('BONK! 🎯', 'by ' + playerName(m.by), 1800); V.shakeT = now(); V.shakeA = 0.7; SFX.thud();
-        if (V.mode === 'aim' && (MT.st === 'up' || MT.st === 'down')) { MT.st = 'idle'; MT.msg = 'Interrupted!'; MT.msgT = now(); }
+        if ((V.mode === 'aim' || V.mode === 'atk') && (MT.st === 'up' || MT.st === 'down')) { MT.st = 'idle'; MT.msg = 'Interrupted!'; MT.msgT = now(); }
         if (V.mode === 'run') { RUN.stunUntil = now() + 1200; RUN.tripAt = now(); RUN.v = 0; }
         if (V.mode === 'cart') { CART.v *= 0.2; CART.yaw += (Math.random() - 0.5) * 0.9; }
       } else if (B && B.avatar && B.avatar.position.distanceTo(camera.position) < 60) SFX.thud();
@@ -1949,6 +1994,7 @@ function clientRecv(m) {
       const B = BALLS.get(m.id); if (B) { B.flatT = now(); B.flatKind = 'flat'; B.flatDir = [m.dx, m.dz]; }
       if (m.id === ME.id) {
         showBanner('RUN OVER! 🚗💥', 'by ' + playerName(m.by), 2400); V.shakeT = now(); V.shakeA = 1; SFX.thud(); SFX.aww();
+        if (V.mode === 'atk') stopAtk();
         if (V.mode === 'aim') { MT.st = 'idle'; P.yaw += (Math.random() - 0.5) * 1.4; MT.msg = 'Knocked silly!'; MT.msgT = now(); }
         if (V.mode === 'run') { RUN.stunUntil = now() + 1600; RUN.tripAt = now(); RUN.v = 0; RUN.p.x += (m.dx || 0) * 3; RUN.p.z += (m.dz || 0) * 3; }
       } else if (B && B.avatar && B.avatar.position.distanceTo(camera.position) < 60) SFX.thud();
@@ -2066,7 +2112,7 @@ $('cExit').onclick = () => endTravel();
 $('cSkip').onclick = () => skipToBall();
 $('cOut').onclick = () => getOutOfCart();
 $('cIn').onclick = () => getInCart();
-$('bAtk').addEventListener('pointerdown', e => { e.preventDefault(); audio(); armAtk(); });
+$('bAtk').addEventListener('pointerdown', e => { e.preventDefault(); audio(); startAtk(); });
 function funnelRelease() {
   if (FUN.st !== 'hold') return;
   const ms = now() - FUN.t0;
@@ -2117,6 +2163,7 @@ canvas.addEventListener('pointermove', e => {
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY; drag.moved += Math.abs(dx) + Math.abs(dy);
   if (V.mode === 'cart') { CART.look = clamp(CART.look + dx * 0.004, -1.6, 1.6); V.look = clamp(V.look - dy * 0.003, -0.5, 0.5); return; }
   if (V.mode === 'run') { RUN.yaw += dx * 0.004; V.look = clamp(V.look - dy * 0.003, -0.6, 0.6); return; }
+  if (V.mode === 'atk') { if (MT.st === 'idle') { const k = (e.pointerType === 'touch' ? 0.0042 : 0.0026) * (e.shiftKey ? 0.3 : 1); ATK.yaw += dx * k; V.look = clamp(V.look - dy * k * 0.8, -0.5, 0.6); } return; }
   if (V.mode === 'aim' && MT.st === 'idle') {
     const fine = e.shiftKey || V.zoom ? 0.3 : 1, k = (e.pointerType === 'touch' ? 0.0042 : 0.0026) * fine;
     P.yaw += dx * k; V.look = clamp(V.look - dy * k * 0.8, -0.6, 0.7);
@@ -2138,7 +2185,7 @@ addEventListener('keydown', e => {
   keys.add(k);
   if (k === 'q') changeClub(-1);
   else if (k === 'e') { if (CART.driving) getOutOfCart(); else if (RUN.on) getInCart(); else changeClub(1); }
-  else if (k === 'x') armAtk();
+  else if (k === 'x') startAtk();
   else if (k === 'b') drink('sip'); else if (k === 'n') drink('shot');
   else if (k === 'f') travelKey();
   else if (k === 'g' && V.mode === 'cart') honk();
@@ -2148,10 +2195,10 @@ addEventListener('keyup', e => { keys.delete(e.key.toLowerCase()); if (e.key ===
 // keep Space for swinging: don't leave HUD buttons focused after a click
 document.addEventListener('click', e => { const b = e.target.closest && e.target.closest('#hud button'); if (b) b.blur(); });
 function keyAim(dt) {
-  if (V.mode !== 'aim' || MT.st !== 'idle') return;
-  const fine = keys.has('shift') ? 0.18 : 1, r = 0.55 * fine * dt;
-  if (keys.has('a') || keys.has('arrowleft')) P.yaw -= r;
-  if (keys.has('d') || keys.has('arrowright')) P.yaw += r;
+  if ((V.mode !== 'aim' && V.mode !== 'atk') || MT.st !== 'idle') return;
+  const fine = keys.has('shift') ? 0.18 : 1, r = 0.55 * fine * dt, tgt = V.mode === 'atk' ? ATK : P;
+  if (keys.has('a') || keys.has('arrowleft')) tgt.yaw -= r;
+  if (keys.has('d') || keys.has('arrowright')) tgt.yaw += r;
   if (keys.has('w') || keys.has('arrowup')) V.look = clamp(V.look + r, -0.6, 0.7);
   if (keys.has('s') || keys.has('arrowdown')) V.look = clamp(V.look - r, -0.6, 0.7);
 }
@@ -2182,5 +2229,5 @@ function frame() {
 buildHole((Math.random() * 1e9) | 0, 0, 9);
 requestAnimationFrame(frame);
 // for automated tests
-window.__tipsy = { ATK, ATKS, armAtk, fireAtk, getOutOfCart, getInCart, drunk, P, V, MT, BUZZ, CART, RUN, FUN, cartIn, startTravel, endTravel, skipToBall, funnelRelease, S: () => S, HOLE: () => HOLE, NET, HS, simulate, swingPress, drink, CLUBS, buildHole, camera, renderer, BALLS };
+window.__tipsy = { ATK, ATKS, startAtk, hitAtk, stopAtk, getOutOfCart, getInCart, drunk, P, V, MT, BUZZ, CART, RUN, FUN, cartIn, startTravel, endTravel, skipToBall, funnelRelease, S: () => S, HOLE: () => HOLE, NET, HS, simulate, swingPress, drink, CLUBS, buildHole, camera, renderer, BALLS };
 })();

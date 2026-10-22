@@ -128,6 +128,7 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
 #mZone{position:absolute;top:0;bottom:0;background:rgba(255,255,255,.85)}
 #mZoneOk{position:absolute;top:0;bottom:0;background:rgba(255,255,255,.28)}
 #mPow{position:absolute;top:-2px;bottom:-2px;width:4px;margin-left:-2px;background:#ffc53d;box-shadow:0 0 6px #ffc53d}
+#mTick{position:absolute;top:-2px;bottom:-2px;width:3px;margin-left:-1.5px;background:#2ad4ff;box-shadow:0 0 6px #2ad4ff}
 #mNeedle{position:absolute;top:-3px;bottom:-3px;width:4px;margin-left:-2px;background:#fff;box-shadow:0 0 0 1px #000,0 0 8px #fff}
 #mFill{position:absolute;top:0;bottom:0;left:11.5%;background:rgba(255,255,255,.18)}
 #meterLbl{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:3px;font-weight:600}
@@ -287,7 +288,7 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
   <div id="bottom">
     <div id="meterWrap" class="hcard">
       <div id="mMsg"></div>
-      <div id="meter"><div id="mFill"></div><div id="mZoneOk"></div><div id="mZone"></div><div id="mPow" hidden></div><div id="mNeedle"></div></div>
+      <div id="meter"><div id="mFill"></div><div id="mZoneOk"></div><div id="mZone"></div><div id="mPow" hidden></div><div id="mTick" hidden title="Power that reaches the hole"></div><div id="mNeedle"></div></div>
       <div id="meterLbl"><span>⎯ accuracy</span><span id="mHint">Space / tap SWING to start</span><span>power ⎯</span></div>
     </div>
     <div id="drinkBox" class="hcard">
@@ -384,7 +385,7 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
       <div class="row"><button class="btn small" id="skipHoleBtn">End this hole for everyone</button></div>
     </div>
     <h3>Controls</h3>
-    <p class="muted">Drag (or A/D, arrow keys) to aim; hold Shift for fine aim. Drag up/down to look. Q/E or the arrows change club. Space or SWING: first press starts the backswing, second sets power, third sets accuracy when the needle comes back to the white line. Too early slices right, too late hooks left. B sips, N takes a shot. Z zooms, C toggles ball cam, Tab shows the scorecard. After each shot you travel to your ball: W/S or ▲▼ to go, A/D or ◀▶ (or drag) to steer, G honks. Funnel a beer on the tee for a cart; otherwise you run. When you reach your ball, press ⛳ Play shot (or F); ⏭ Skip jumps there for a sip. In a cart, hit a friend to run them over; E (or 🚶 Get out / 🚗 Get in) leaves and boards your cart, which stays where you leave it. 🎯 (or X) arms an attack ball, five per hole: a crosshair appears, then tap again or press Space to fire it straight where you're looking. A hit knocks the player down or ruins their swing. Attack balls never count as strokes.</p>
+    <p class="muted">Drag (or A/D, arrow keys) to aim; hold Shift for fine aim. Drag up/down to look. Q/E or the arrows change club. Space or SWING: first press starts the backswing, second sets power, third sets accuracy when the needle comes back to the white line. Too early slices right, too late hooks left. B sips, N takes a shot. Z zooms, C toggles ball cam, Tab shows the scorecard. After each shot you travel to your ball: W/S or ▲▼ to go, A/D or ◀▶ (or drag) to steer, G honks. Funnel a beer on the tee for a cart; otherwise you run. When you reach your ball, press ⛳ Play shot (or F); ⏭ Skip jumps there for a sip. In a cart, hit a friend to run them over; E (or 🚶 Get out / 🚗 Get in) leaves and boards your cart, which stays where you leave it. 🎯 (or X) drops an attack ball at your feet, five per hole: line up the crosshair, tap SWING to start the backswing and tap again to hit it (the needle sets the speed). It flies straight at whoever is under the crosshair; a hit knocks them down or ruins their swing. Attack balls never count as strokes. Putting: the putter's full stroke scales to the putt, and the blue ⛳ tick on the meter shows the power that reaches the hole on a flat putt; the dotted line shows how the putt starts to break.</p>
     <div class="row" style="margin-top:14px"><button class="btn small" id="pickupBtn">Pick up (take max score)</button><button class="btn danger small" id="leaveBtn">Leave game</button></div>
   </div>
 </div>

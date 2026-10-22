@@ -43,14 +43,15 @@ After every shot you travel to your ball yourself, in first person. A pop-up mar
 
 ## Attack balls
 
-Every player gets five attack balls per hole, in either mode, and they never count as strokes. Tap **🎯** (or X) and a crosshair appears; tap again (or Space) to fire. The big orange ball flies fast and flat straight where you're looking, and the hit zone is generous. A hit knocks the player down for a moment, wrecks their swing if they're mid-backswing, and jolts their cart if they're driving. You can fire from your ball, on foot, from the cart, or after you've holed out. House-rule triggers: *Gets hit by an attack ball* and *Hits someone with an attack ball*.
+Every player gets five attack balls per hole, in either mode, and they never count as strokes. Tap **🎯** (or X) to drop one at your feet. Line up the crosshair (drag or A/D), then hit it with a quick two-tap swing: tap **SWING** (or Space) to start the backswing and tap again to hit; the needle sets how fast it flies. It goes straight at whoever is under the crosshair (no slice), and the hit zone is generous. A hit knocks the player down for a moment, wrecks their swing if they're mid-backswing, and jolts their cart if they're driving. You can hit one from your ball, on foot, after you've holed out, or from the cart (🎯 hops you out first). Tap ✕ to put it away. House-rule triggers: *Gets hit by an attack ball* and *Hits someone with an attack ball*.
 
 ## How to swing
 
 - **Aim:** drag on the screen (or A/D, arrow keys; hold Shift for fine aim). Drag up and down to look. The dotted line and ring show where a full-power shot lands with your current club and buzz, before wind.
 - **Club:** the game picks one for you each shot; change it with ◀ ▶, Q/E or the mouse wheel.
 - **Swing:** press SWING (or Space) three times: once to start the backswing, once to set power, and once when the needle comes back to the white line. The white zone is generous and the needle is fairly slow when you're sober. Too early pushes or slices right, too late pulls or hooks left. Way off tops the ball.
-- Rough costs 18% distance, and bunkers cost 40% (12% with the sand wedge). Water is a one-stroke penalty with a drop beside the hazard; out of bounds is stroke and distance. Putts inside 2 feet are tapped in automatically, and a hole ends for you at par + 4.
+- **Putting:** the putter's full stroke scales to the putt (about 1.6 times the distance to the hole), and a blue tick on the meter marks the power that reaches the hole on a flat putt. A dotted line shows how the first half of the putt breaks. Greens are gentle, the cup is generous, and anything inside 3 feet is tapped in automatically.
+- Rough costs 18% distance, and bunkers cost 40% (12% with the sand wedge). Water is a one-stroke penalty with a drop beside the hazard; out of bounds is stroke and distance. A hole ends for you at par + 4.
 - 🚗 / 🏃 leaves your ball to drive or run around, 🔭 zooms, 🎥 switches between your own eyes and a ball cam during flight, 📋 shows the scorecard, 🍻 sends a cheers to everyone, and ☰ has the invite link, settings and **Pick up**.
 
 ## Files
