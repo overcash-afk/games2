@@ -33,7 +33,7 @@ For adults of legal drinking age. Pace yourself, drink some water, and nobody dr
 
 ## Getting to your ball: funnel or run
 
-After every shot you travel to your ball yourself, in first person. A pop-up marker and a beam of light show where your ball is; when it's off screen, the marker sits on the edge of the screen and points the way.
+After every shot you travel to your ball yourself, in first person. You can get moving one second after you hit, while the ball is still in the air; until you touch the controls, your view keeps following it. The shot is scored when the ball stops, and **⛳ Play shot** appears once it has. A pop-up marker and a beam of light show where your ball is (following it while it flies); when it's off screen, the marker sits on the edge of the screen and points the way.
 
 - **Funnel for a cart:** on each tee box you're offered a golf cart for that hole. To get it you funnel a beer: hold **Hold while you funnel** for the whole chug and let go when it's empty (anything under 2 seconds doesn't count). Everyone sees your time, and the final awards include Fastest Funnel. The funnel adds **no shot power**, only the cart, but it does make you drunker (+3 wobble and blur, like a shot). The offer lasts until your tee shot.
 - **With a cart** you drive to your shots (▲ ▼ ◀ ▶ or W/A/S/D, 📯 / G to honk; steering gets loose when you're drunk) and can **run people over**: hit a friend standing at their ball or running to it and they go flying, their swing gets knocked off line, and your house rules decide who drinks. Trees and other carts stop you. Drive into a pond and the cart sinks: you're on foot for the rest of the hole. Get out whenever you like (**🚶 Get out** or E): the cart stays where you left it, and **🚗 Get in** (or E) appears when you walk back to it. After a shot you start in the cart only if it's parked nearby.
@@ -52,6 +52,7 @@ Every player gets five attack balls per hole, in either mode, and they never cou
 - **Swing:** press SWING (or Space) three times: once to start the backswing, once to set power, and once when the needle comes back to the white line. The white zone is generous and the needle is fairly slow when you're sober. Too early pushes or slices right, too late pulls or hooks left. Way off tops the ball.
 - **Putting:** the putter's full stroke scales to the putt (about 1.6 times the distance to the hole), and a blue tick on the meter marks the power that reaches the hole on a flat putt. A dotted line shows how the first half of the putt breaks. Greens are gentle, the cup is generous, and anything inside 3 feet is tapped in automatically.
 - Rough costs 18% distance, and bunkers cost 40% (12% with the sand wedge). Water is a one-stroke penalty with a drop beside the hazard; out of bounds is stroke and distance. A hole ends for you at par + 4.
+- **Graphics:** ☰ → Graphics switches between High (sun shadows, full resolution), Medium (the default on phones) and Low (no shadows or grass, lower resolution) if the game stutters.
 - 🚗 / 🏃 leaves your ball to drive or run around, 🔭 zooms, 🎥 switches between your own eyes and a ball cam during flight, 📋 shows the scorecard, 🍻 sends a cheers to everyone, and ☰ has the invite link, settings and **Pick up**.
 
 ## Files
