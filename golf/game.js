@@ -137,6 +137,9 @@ function flash() { flashT = now(); }
 
 // ============================ course generation ============================
 const PARS18 = [4, 4, 3, 5, 4, 3, 4, 5, 4, 4, 3, 5, 4, 4, 3, 4, 5, 4];
+// Host wind setting: speed = a + b × the hole's base speed (base is 0 to 7 m/s, about 0 to 16 mph).
+const WIND = { calm: { a: 0, b: 0 }, light: { a: 0, b: 0.5 }, normal: { a: 0, b: 1 }, strong: { a: 6, b: 1 }, hurricane: { a: 14, b: 1.5 } };
+function applyWind(H, level) { const w = WIND[level] || WIND.normal, sp = w.a + w.b * H.windBase; H.wind = { x: Math.cos(H.windA) * sp, z: Math.sin(H.windA) * sp, s: sp }; }
 const holePar = (idx, nh) => nh === 3 ? [4, 3, 5][idx] : PARS18[idx % 18];
 function courseName(seed) {
   const A = ['Whiskey', 'Bourbon', 'Lager', 'Tipsy', 'Hangover', 'Barley', 'Shandy', 'Stumble', 'Pint', 'Last Call', 'Happy Hour', 'Mulligan', 'Bogey', 'Hazy'];
@@ -253,9 +256,9 @@ function genHole(seed, idx, nh) {
     if (pd && Math.hypot(pd.x, pd.z) > 30 + Math.max(pd.rx, pd.rz) * 0.6 && Math.hypot(pd.x - gx, pd.z - gz) > gR + 6 + Math.min(pd.rx, pd.rz)) H.ponds.push(pd);
   }
   H.bunkers = H.bunkers.filter(b => H.ponds.every(p => ellD(p, b.x, b.z) > 1.4));
-  // wind (m/s)
+  // wind (m/s): each hole rolls a direction and a base speed; the host's wind setting scales it (applyWind)
   const ws = R() < 0.15 ? 0 : rr(1, 7), wa = R() * Math.PI * 2;
-  H.wind = { x: Math.cos(wa) * ws, z: Math.sin(wa) * ws, s: ws };
+  H.windBase = ws; H.windA = wa; H.wind = { x: Math.cos(wa) * ws, z: Math.sin(wa) * ws, s: ws };
   // bounds: inside is in play, the margin beyond is out of bounds scenery
   let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
   for (let i = 0; i < rs.p.length; i += 2) { x0 = Math.min(x0, rs.p[i]); x1 = Math.max(x1, rs.p[i]); z0 = Math.min(z0, rs.p[i + 1]); z1 = Math.max(z1, rs.p[i + 1]); }
@@ -1044,6 +1047,7 @@ function autoAim() {
 function startHole(s) {
   const key = s.seed + ':' + s.game + ':' + s.hole;
   if (!HOLE || HOLE.seed !== s.seed || HOLE.idx !== s.hole) buildHole(s.seed, s.hole, s.nh);
+  applyWind(HOLE, s.wind);
   P.key = key; P.strokes = 0; P.putts = 0; P.done = false; P.lie = 'tee'; P.firstShot = true; P.pend = null;
   const ts = teeSpot(HOLE, ME.slot); P.pos = { x: ts.x, y: groundY(HOLE, ts.x, ts.z) + BR, z: ts.z }; P.prev = { ...P.pos };
   if (CART.driving || RUN.on) endTravel(true);
@@ -1828,12 +1832,12 @@ function peerErr(e) {
 }
 const inviteLink = () => location.href.split(/[?#]/)[0] + '?join=' + NET.code;
 // ----- host -----
-const HS = { seed: 0, nh: 9, hole: 0, phase: 'lobby', mode: 'stroke', holeStart: 0, rules: [], until: 0, game: 0, nextId: 1, players: new Map(), lastState: 0 };
+const HS = { seed: 0, nh: 9, hole: 0, phase: 'lobby', mode: 'stroke', wind: 'normal', holeStart: 0, rules: [], until: 0, game: 0, nextId: 1, players: new Map(), lastState: 0 };
 const cleanName = n => (String(n || '').replace(/[^\p{L}\p{N} ._'-]/gu, '').trim().slice(0, 14)) || 'Golfer';
 function newRec(id, n, slot) { return { id, n, slot, sc: Array(18).fill(null), tm: Array(18).fill(null), k: 0, dn: false, p: null, y: 0, lie: 'tee', si: 0, sh: 0, bz: 0, ld: 0, wt: 0, ob: 0, fn: 0, fb: 0, hc: false, cp: null }; }
 function freeSlot() { const used = new Set([...HS.players.values()].map(p => p.slot)); for (let i = 0; i < MAX_PLAYERS; i++) if (!used.has(i)) return i; return 0; }
 function stateObj() {
-  return { seed: HS.seed, nh: HS.nh, hole: HS.hole, phase: HS.phase, mode: HS.mode, hel: HS.phase === 'play' ? now() - HS.holeStart : 0, rules: HS.rules, game: HS.game, left: Math.max(0, HS.until - now()), code: NET.code, solo: NET.solo,
+  return { seed: HS.seed, nh: HS.nh, hole: HS.hole, phase: HS.phase, mode: HS.mode, wind: HS.wind, hel: HS.phase === 'play' ? now() - HS.holeStart : 0, rules: HS.rules, game: HS.game, left: Math.max(0, HS.until - now()), code: NET.code, solo: NET.solo,
     pl: [...HS.players.values()].map(r => ({ id: r.id, n: r.n, slot: r.slot, sc: r.sc.slice(0, HS.nh), tm: r.tm.slice(0, HS.nh), k: r.k, dn: r.dn, p: r.p, y: r.y, lie: r.lie, si: r.si, sh: r.sh, bz: r.bz, ld: r.ld, wt: r.wt, fn: r.fn || 0, fb: r.fb || 0, hc: !!r.hc, cp: r.cp || null })) };
 }
 function hostGame(solo) {
@@ -1969,6 +1973,7 @@ function hostRecv(id, m) {
       if (id !== ME.id) break;
       if (m.rules) { HS.rules = cleanRules(m.rules); SET.houseRules = HS.rules; saveSet(); }
       if (m.mode && HS.phase === 'lobby') HS.mode = m.mode === 'time' ? 'time' : 'stroke';
+      if (m.wind && WIND[m.wind] && m.wind !== HS.wind) { HS.wind = m.wind; if (HS.phase === 'play') bcast({ t: 'feed', m: '🌬️ Wind set to ' + m.wind }); }
       if (HS.phase === 'lobby') { if (m.nh) HS.nh = [3, 9, 18].includes(m.nh) ? m.nh : 9; if (m.reseed) HS.seed = (Math.random() * 2147483647) | 0; }
       bcastState(); break;
     case 'start': if (id !== ME.id || HS.phase !== 'lobby') break; hostStart(); break;
@@ -2147,6 +2152,7 @@ function applyState(s) {
     }
   }
   if (s.phase !== 'play' && (CART.driving || RUN.on)) endTravel(true);
+  if (HOLE && HOLE.windA != null) applyWind(HOLE, s.wind); // the host can change it mid-round
   renderBoard(); renderCard(); renderLobby(); renderNet(); renderRules();
 }
 function setMenuStatus(s) { setText($('menuStatus'), s); }
@@ -2173,14 +2179,14 @@ function renderLobby() {
   setHTML($('lobbyPlayers'), h);
   $('hostOpts').hidden = !host; $('guestWait').hidden = host;
   setText($('courseName'), courseName(S.seed) + ' · par ' + Array.from({ length: S.nh }, (_, i) => holePar(i, S.nh)).reduce((a, b) => a + b, 0));
-  setText($('courseNameG'), courseName(S.seed)); setText($('holesG'), S.nh + ' holes · ' + (S.mode === 'time' ? 'time trial ⏱' : 'stroke play'));
-  segSet('holesSeg', S.nh); segSet('modeSeg', S.mode || 'stroke');
+  setText($('courseNameG'), courseName(S.seed)); setText($('holesG'), S.nh + ' holes · ' + (S.mode === 'time' ? 'time trial ⏱' : 'stroke play') + ' · ' + (S.wind || 'normal') + ' wind');
+  segSet('holesSeg', S.nh); segSet('modeSeg', S.mode || 'stroke'); segSet('windSeg', S.wind || 'normal');
 }
 function renderNet() {
   const s = NET.solo ? 'Solo game.' : NET.role === 'host' ? (NET.online === 'online' ? 'Ready. Friends can join with the code or the link.' : NET.online) : NET.role === 'guest' ? 'Connected to the host.' : '';
   setText($('netStatus'), s); setText($('pNet'), s);
   setText($('lobbyCode'), NET.code || '------'); setText($('pauseCode'), NET.code || '------');
-  $('pauseInvite').hidden = NET.solo || !NET.code; $('hostPause').hidden = NET.role !== 'host';
+  $('pauseInvite').hidden = NET.solo || !NET.code; $('hostPause').hidden = NET.role !== 'host'; segSet('windSeg2', S ? S.wind || 'normal' : 'normal');
 }
 async function share() {
   const url = inviteLink(), text = 'Come play Tipsy Links with me! Game code ' + NET.code;
@@ -2206,6 +2212,7 @@ $('nameInput').addEventListener('keydown', e => { if (e.key === 'Enter') ($('joi
 $('shareBtn').onclick = share; $('copyBtn').onclick = copyLink; $('pShare').onclick = share; $('pCopy').onclick = copyLink;
 segOn('holesSeg', v => toHost({ t: 'cfg', nh: +v }));
 segOn('modeSeg', v => toHost({ t: 'cfg', mode: v }));
+segOn('windSeg', v => toHost({ t: 'cfg', wind: v })); segOn('windSeg2', v => toHost({ t: 'cfg', wind: v }));
 wireRules($('rulesEd')); wireRules($('rulesEd2'));
 $('reseedBtn').onclick = () => toHost({ t: 'cfg', reseed: 1 });
 $('startBtn').onclick = () => { audio(); toHost({ t: 'start' }); };

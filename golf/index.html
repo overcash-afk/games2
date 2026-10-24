@@ -52,6 +52,7 @@ h3{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--mute
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:12px;overflow:hidden}
 .seg button{cursor:pointer;background:transparent;border:0;padding:9px 14px;font-weight:700;font-size:14px;color:var(--muted)}
 .seg button.on{background:var(--accent);color:#2a1503}
+.seg.wrap{flex-wrap:wrap}
 .status{min-height:20px;margin-top:10px;color:var(--accent);font-size:14px}
 .foot{margin-top:18px;font-size:12px;color:var(--muted);line-height:1.5;border-top:1px solid var(--line);padding-top:12px}
 .bigcode{font-family:var(--display);font-size:44px;letter-spacing:.2em;color:var(--accent);line-height:1}
@@ -341,6 +342,8 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
       <div class="row"><div class="seg" id="modeSeg"><button data-v="stroke">Stroke play</button><button data-v="time">Time trial ⏱</button></div><span class="muted">Time trial: a clock runs on every hole and strokes don't count. Fastest total time wins; 5 minutes max per hole.</span></div>
       <h3>Holes</h3>
       <div class="seg" id="holesSeg"><button data-v="3">3</button><button data-v="9">9</button><button data-v="18">18</button></div>
+      <h3>Wind</h3>
+      <div class="row"><div class="seg wrap" id="windSeg"><button data-v="calm">Calm</button><button data-v="light">Light</button><button data-v="normal">Normal</button><button data-v="strong">Strong</button><button data-v="hurricane">Hurricane</button></div><span class="muted">Normal is up to about 16 mph; Strong 13–29; Hurricane 31–55.</span></div>
       <h3>House rules</h3>
       <p class="muted" style="margin:0 0 8px">When it happens, the game tells the right people to drink. Write anything in the last box, like "chug while singing".</p>
       <div id="rulesEd" class="rulesEd"></div>
@@ -383,7 +386,8 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
     <div id="rulesEd2" class="rulesEd"></div>
     <div id="hostPause">
       <h3>Host</h3>
-      <div class="row"><button class="btn small" id="skipHoleBtn">End this hole for everyone</button></div>
+      <div class="row"><span class="grow">Wind</span><div class="seg wrap" id="windSeg2"><button data-v="calm">Calm</button><button data-v="light">Light</button><button data-v="normal">Normal</button><button data-v="strong">Strong</button><button data-v="hurricane">Hurricane</button></div></div>
+      <div class="row" style="margin-top:10px"><button class="btn small" id="skipHoleBtn">End this hole for everyone</button></div>
     </div>
     <h3>Controls</h3>
     <p class="muted">Drag (or A/D, arrow keys) to aim; hold Shift for fine aim. Drag up/down to look. Q/E or the arrows change club. Space or SWING: first press starts the backswing, second sets power, third sets accuracy when the needle comes back to the white line. Too early slices right, too late hooks left. B sips, N takes a shot. Z zooms, C toggles ball cam, Tab shows the scorecard. After each shot you travel to your ball: W/S or ▲▼ to go, A/D or ◀▶ (or drag) to steer, G honks. Funnel a beer on the tee for a cart; otherwise you run. When you reach your ball, press ⛳ Play shot (or F); ⏭ Skip jumps there for a sip. In a cart, hit a friend to run them over; E (or 🚶 Get out / 🚗 Get in) leaves and boards your cart, which stays where you leave it. 🎯 (or X) drops an attack ball at your feet, five per hole: line up the crosshair, tap SWING to start the backswing and tap again to hit it (the needle sets the speed). It flies straight at whoever is under the crosshair; a hit knocks them down or ruins their swing. Attack balls never count as strokes. Putting: the putter's full stroke scales to the putt, and the blue ⛳ tick on the meter shows the power that reaches the hole on a flat putt; the dotted line shows how the putt starts to break.</p>

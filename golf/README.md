@@ -9,7 +9,7 @@ First-person party golf for up to four friends. The more you drink, the farther 
 1. One person opens the page, enters a name and clicks **Host a game**.
 2. In the clubhouse, they click **Share invite link** (or **Copy link**) and send it to up to three friends. Friends can also type the six-character code under **Join a friend**.
 3. Friends open the link, enter a name and click **Join**.
-4. The host picks **Stroke play** or **Time trial**, 3, 9 or 18 holes, sets the house rules, rolls a new course if they like, and clicks **Tee off**.
+4. The host picks **Stroke play** or **Time trial**, 3, 9 or 18 holes, the **wind** (Calm, Light, Normal up to about 16 mph, Strong 13–29 mph, or Hurricane 31–55 mph; changeable mid-round from ☰), sets the house rules, rolls a new course if they like, and clicks **Tee off**.
 
 **Time trial:** a clock runs on every hole from tee-off until you hole out, and strokes don't count. The lowest total time wins. A hole times out at 5 minutes (and **Pick up** takes the 5:00), so nobody holds up the round.
 
