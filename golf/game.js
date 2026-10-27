@@ -8,7 +8,7 @@
 // others can watch it fly. Transport: WebRTC data channels introduced by the
 // public PeerJS broker, or a BroadcastChannel between tabs of one browser.
 // ============================================================================
-const VERSION = 3, MAX_PLAYERS = 4, PEER_PREFIX = 'tipsylinks-';
+const VERSION = 4, MAX_PLAYERS = 4, PEER_PREFIX = 'tipsylinks-';
 const $ = id => document.getElementById(id);
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -1309,18 +1309,27 @@ const TOL = {
 };
 const tolOf = k => TOL[k] || TOL.weekend;
 // The swing only ever moves on when you press: nothing is set or hit for you.
-function swingPress() {
+// `at` is when the key or tap actually happened, so the needle is read right there, not at the last frame.
+function swingPress(at) {
   const t = now(); if (t - (MT.lastPress || 0) < 150) return; // one press, one step, even if a key or tap bounces
   MT.lastPress = t;
-  if (V.mode === 'atk') { audio(); if (MT.st === 'idle') { MT.st = 'up'; MT.x = 0; MT.dir = 1; MT.t = 0; MT.pow = 0; MT.msg = ''; } else if (MT.st === 'up') hitAtk(); return; }
+  if (at) meterTo(Math.min(at, t));
+  if (V.mode === 'atk') { audio(); if (MT.st === 'idle') { MT.st = 'up'; MT.x = 0; MT.dir = 1; MT.t = 0; MT.pow = 0; MT.msg = ''; MT.at = at || t; } else if (MT.st === 'up') hitAtk(); return; }
   if (V.mode !== 'aim') { if (V.mode === 'intro') beginAim(); return; }
   audio();
-  if (MT.st === 'idle') { MT.st = 'up'; MT.x = 0; MT.dir = 1; MT.t = 0; MT.pow = 0; MT.msg = ''; swingSig('up'); }
+  if (MT.st === 'idle') { MT.st = 'up'; MT.x = 0; MT.dir = 1; MT.t = 0; MT.pow = 0; MT.msg = ''; MT.at = at || t; swingSig('up'); }
   else if (MT.st === 'up') { MT.pow = clamp(MT.disp, 0.02, 1); MT.st = 'down'; SFX.whoosh(); swingSig('down'); }
   else if (MT.st === 'down') { MT.acc = MT.disp; takeShot(); }
 }
 // tell the others where your swing is, so your golfer swings on their screens
 const swingSig = s => toHost({ t: 'sw', s, p: +MT.pow.toFixed(2), pt: CLUBS[P.club].putt ? 1 : 0 });
+// The needle runs on real time whatever the frame rate: it's stepped 1/120 s at a time up to each
+// frame, and up to the moment of each press, so a slow computer doesn't make the swing easier.
+function meterTo(t) {
+  if (!MT.at) { MT.at = t; return; }
+  let left = Math.min(2, (t - MT.at) / 1000); if (left <= 0) return; MT.at = t;
+  while (left > 1e-6) { const h = Math.min(1 / 120, left); updateMeter(h); left -= h; }
+}
 function updateMeter(dt) {
   if (MT.st !== 'up' && MT.st !== 'down') return;
   const b = drunk(), T = tolOf(SET.tol), sp = 1 + Math.min(T.spMax, T.sp * b); MT.t += dt;
@@ -1339,6 +1348,21 @@ function updateMeter(dt) {
   if (MT.st === 'down' && MT.x <= METER_MIN) { MT.st = 'idle'; MT.swingA = 0; MT.msg = 'Too late! Swing again'; MT.msgT = now(); SFX.tick(); swingSig('idle'); }
 }
 function swayYaw(t, putt) { const b = drunk(); return b * 0.009 * (putt ? 0.5 : 1) * (Math.sin(t * 0.00083) * 0.65 + Math.sin(t * 0.00191 + 1.3) * 0.35); }
+// Putting marker: the power that gets the ball to the hole on this green, uphill or downhill. A dozen
+// simulated putts straight at the cup find the slowest one that drops or gets there, plus about 30 cm
+// so it doesn't die short. Worked out once per ball position.
+function puttTickV() {
+  const x = P.pos.x, z = P.pos.z;
+  if (!V.tick || V.tick.x !== x || V.tick.z !== z || V.tick.h !== HOLE) {
+    const d = distToPin(x, z), yaw = yawTo(x, z, HOLE.cup.x, HOLE.cup.z), ux = Math.sin(yaw), uz = -Math.cos(yaw), k = 2 * SURF.green.mu * G;
+    const gets = v => { const r = simulate(HOLE, P.pos, { putt: true, v0: v, yaw }); return r.out === 'holed' || (r.end[0] - x) * ux + (r.end[2] - z) * uz >= d; };
+    let lo = Math.sqrt(k * d) * 0.4, hi = Math.sqrt(k * d) * 2.5;
+    if (gets(lo)) hi = lo; else for (let i = 0; i < 12; i++) { const m = (lo + hi) / 2; if (gets(m)) hi = m; else lo = m; }
+    V.tick = { x, z, h: HOLE, v: Math.sqrt(hi * hi + k * 0.3) };
+  }
+  return V.tick.v;
+}
+const puttTick = () => Math.min(1, puttTickV() ** 2 / (2 * SURF.green.mu * G) / (puttRange() * puttLie()));
 function takeShot() {
   const club = CLUBS[P.club], b = drunk(), putt = !!club.putt, t = now();
   let e = MT.acc, verdict;
@@ -1562,7 +1586,7 @@ function updateAimGuides(t) {
   if (putt && P.lie === 'green') {
     const now_ = performance.now();
     if (!V.pp || now_ - V.pp.at > 150 || Math.abs(V.pp.yaw - yaw) > 0.003 || V.pp.x !== P.pos.x) {
-      const r = simulate(HOLE, P.pos, { putt: true, v0: Math.sqrt(2 * SURF.green.mu * G * Math.max(0.3, distToPin(P.pos.x, P.pos.z))), yaw });
+      const r = simulate(HOLE, P.pos, { putt: true, v0: puttTickV(), yaw }); // the line at the marker's power
       V.pp = { at: now_, yaw, x: P.pos.x, pts: r.pts };
     }
     const pts = V.pp.pts, cnt = pts.length / 3, upto = Math.max(2, Math.floor(cnt * 0.55));
@@ -1593,7 +1617,7 @@ function updateGame(dt, t) {
     else if (MT.st === 'hit') { MT.follow = Math.min(1, MT.follow + dt * 3.2); a = -MT.follow * CR.follow; }
     CR.grp.quaternion.setFromAxisAngle(CR.axis, a);
   }
-  updateMeter(dt);
+  meterTo(t);
   // balls
   for (const B of BALLS.values()) {
     if (B.anim && !B.anim.done) animBall(B, t);
@@ -1744,8 +1768,11 @@ function updateHud(t) {
   const H = HOLE, b = drunk();
   setText($('iHole'), String(S.hole + 1)); setText($('iPar'), String(H.par));
   const me = S.pl.find(q => q.id === ME.id), el = t - S.holeStart;
-  const clock = timeMode() ? (P.done && me && me.tm && me.tm[S.hole] != null ? '⏱ ' + fmtTime(me.tm[S.hole]) + ' · ' : el < 0 ? '⏱ starts in ' + Math.ceil(-el / 1000) + ' · ' : '⏱ <b>' + fmtTime(el) + '</b> · ') : '';
-  if (P.done) { setHTML($('iLine1'), clock + 'Holed out · ' + P.strokes + (P.strokes === 1 ? ' stroke' : ' strokes')); setText($('iLine2'), V.spec ? 'Watching ' + playerName(V.spec) : 'Waiting for the others'); }
+  let clock = timeMode() ? (P.done && me && me.tm && me.tm[S.hole] != null ? '⏱ ' + fmtTime(me.tm[S.hole]) + ' · ' : el < 0 ? '⏱ starts in ' + Math.ceil(-el / 1000) + ' · ' : '⏱ <b>' + fmtTime(el) + '</b> · ') : '';
+  // the last one out in a time trial: a countdown for them, and for everyone waiting on them
+  const lastS = timeMode() && S.lastAt ? Math.max(0, Math.ceil((S.lastAt - t) / 1000)) : 0, lastP = lastS && S.pl.find(q => !q.dn);
+  if (lastS && !P.done) { clock = '⏱ <b class="hot">' + lastS + ' s left!</b> · '; if (lastS <= 5 && lastS !== V.lastTick) { V.lastTick = lastS; SFX.tick(); } }
+  if (P.done) { setHTML($('iLine1'), clock + 'Holed out · ' + P.strokes + (P.strokes === 1 ? ' stroke' : ' strokes')); setText($('iLine2'), lastP ? playerName(lastP.id) + ' has ' + lastS + ' s to hole out' : V.spec ? 'Watching ' + playerName(V.spec) : 'Waiting for the others'); }
   else if (P.pos) {
     const d = distToPin(P.pos.x, P.pos.z);
     setHTML($('iLine1'), clock + 'Shot <b>' + (P.strokes + 1) + '</b> · <b>' + fmtDist(d) + '</b> to pin');
@@ -1781,7 +1808,7 @@ function updateHud(t) {
   $('mFill').style.width = MT.st === 'up' ? (meterPct(disp) - meterPct(0)) + '%' : '0%';
   $('mFill').style.left = meterPct(0) + '%';
   const tick = aiming && c.putt && P.pos && !P.done; $('mTick').hidden = !tick;
-  if (tick) $('mTick').style.left = meterPct(Math.min(1, distToPin(P.pos.x, P.pos.z) / (puttRange() * puttLie()))) + '%';
+  if (tick) $('mTick').style.left = meterPct(puttTick()) + '%';
   const showPow = MT.st === 'down' || MT.st === 'hit'; $('mPow').hidden = !showPow; if (showPow) $('mPow').style.left = meterPct(MT.pow) + '%';
   setText($('mHint'), V.mode === 'atk' ? (MT.st === 'up' ? 'Tap again to hit it!' : 'Attack ball: tap SWING, then tap to hit') : MT.st === 'up' ? 'Press to set power' : MT.st === 'down' ? 'Press on the white line!' : aiming ? 'Press SWING (Space) to start' : '');
   setText($('mMsg'), t - MT.msgT < 2200 ? MT.msg : '');
@@ -1800,6 +1827,7 @@ function updateHud(t) {
     $('cExit').hidden = !(P.done || nearBall()); setText($('cExit'), P.done ? '👀 Watch' : '⛳ Play shot');
     $('cSkip').hidden = P.done || !!P.pend || nearBall(); $('cHonk').hidden = !CART.driving;
     $('cOut').hidden = !CART.driving; $('cIn').hidden = !nearCart();
+    setText($('cKeys'), (CART.driving ? 'W/S drive · A/D steer · G honk · E get out' : 'W/S run · A/D steer' + (P.hasCart ? ' · E get in at your cart' : '')) + (P.done || nearBall() ? ' · F ' + (P.done ? 'watch' : 'play shot') : ''));
     if (RUN.on && P.hasCart && !nearCart()) setText($('cDist'), $('cDist').textContent + ' · cart ' + fmtDist(Math.hypot(cartSpot().x - RUN.p.x, cartSpot().z - RUN.p.z)));
   }
   // attack balls
@@ -1825,7 +1853,7 @@ function renderBoard() {
 const toPar = p => { let t = 0; for (let i = 0; i < S.nh; i++) if (p.sc[i] != null) t += p.sc[i] - holePar(i, S.nh); return t; };
 const strokesTotal = p => p.sc.reduce((a, v) => a + (v || 0), 0);
 const fmtPar = v => v === 0 ? 'E' : v > 0 ? '+' + v : String(v);
-const TIME_CAP = 300000, INTRO_MS = 4200;
+const TIME_CAP = 300000, INTRO_MS = 4200, LAST_MS = 15000, LAST_PEN = 30000;
 const fmtTime = ms => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
 const timeMode = () => !!(S && S.mode === 'time');
 const totalTime = p => (p.tm || []).reduce((a, v) => a + (v || 0), 0);
@@ -2028,7 +2056,8 @@ function awardsHtml() {
   const drinks = p => p.si + p.sh + (p.fn || 0), mx = Math.max(...pl.map(drinks));
   if (mx > 0) { const w = pl.filter(p => drinks(p) === mx); A.push(['🍺', 'Thirstiest', w.map(p => p.n).join(' & '), [[w[0].si, 'sip'], [w[0].sh, 'shot'], [w[0].fn || 0, 'funnel']].filter(x => x[0]).map(x => x[0] + ' ' + x[1] + (x[0] === 1 ? '' : 's')).join(', ')]); }
   const fb = pl.filter(p => p.fb > 0).sort((a, b) => a.fb - b.fb)[0]; if (fb) A.push(['🍻', 'Fastest funnel', fb.n, (fb.fb / 1000).toFixed(1) + ' s']);
-  const ld = Math.max(...pl.map(p => p.ld)); if (ld > 0) { const w = pl.find(p => p.ld === ld); A.push(['💥', 'Longest drive', w.n, yds(ld) + ' yds']); }
+  const ld = Math.max(...pl.map(p => p.ld)); // the Long Drive contest has its own award
+  if (ld > 0 && !(S.side === 'both' || S.side === 'ld')) { const w = pl.find(p => p.ld === ld); A.push(['💥', 'Longest drive', w.n, yds(ld) + ' yds']); }
   for (const [f, e, t, u] of [['cw', '📏', 'Pin seeker', ' Closest to the Pin win'], ['lw', '💪', 'Long Drive champ', ' Long Drive win'], ['bw', '🤝', 'Hustler', ' bet']]) {
     const mx = Math.max(...pl.map(p => p[f] || 0)); if (mx <= 0) continue;
     A.push([e, t, pl.filter(p => (p[f] || 0) === mx).map(p => p.n).join(' & '), mx + u + (mx === 1 ? '' : 's') + (f === 'bw' ? ' won' : '')]);
@@ -2145,12 +2174,12 @@ function peerErr(e) {
 }
 const inviteLink = () => location.href.split(/[?#]/)[0] + '?join=' + NET.code;
 // ----- host -----
-const HS = { seed: 0, nh: 9, hole: 0, phase: 'lobby', mode: 'stroke', wind: 'normal', side: 'both', holeStart: 0, rules: [], until: 0, game: 0, nextId: 1, players: new Map(), lastState: 0, cb: null, bets: [], betId: 0, log: [] };
+const HS = { seed: 0, nh: 9, hole: 0, phase: 'lobby', mode: 'stroke', wind: 'normal', side: 'both', holeStart: 0, lastAt: 0, rules: [], until: 0, game: 0, nextId: 1, players: new Map(), lastState: 0, cb: null, bets: [], betId: 0, log: [] };
 const cleanName = n => (String(n || '').replace(/[^\p{L}\p{N} ._'-]/gu, '').trim().slice(0, 14)) || 'Golfer';
 function newRec(id, n, slot, tol) { return { id, n, slot, tol: TOL[tol] ? tol : 'weekend', sc: Array(18).fill(null), tm: Array(18).fill(null), k: 0, dn: false, hit: false, p: null, y: 0, lie: 'tee', si: 0, sh: 0, bz: 0, ld: 0, wt: 0, ob: 0, fn: 0, fb: 0, hc: false, cp: null, cw: 0, lw: 0, bw: 0 }; }
 function freeSlot() { const used = new Set([...HS.players.values()].map(p => p.slot)); for (let i = 0; i < MAX_PLAYERS; i++) if (!used.has(i)) return i; return 0; }
 function stateObj() {
-  return { seed: HS.seed, nh: HS.nh, hole: HS.hole, phase: HS.phase, mode: HS.mode, wind: HS.wind, side: HS.side, cb: HS.cb ? [HS.cb.id, HS.cb.d] : null, bets: HS.bets.map(g => [g.id, g.a, g.b, g.k, g.st === 'on' ? 1 : 0]), log: HS.log, hel: HS.phase === 'play' ? now() - HS.holeStart : 0, rules: HS.rules, game: HS.game, left: Math.max(0, HS.until - now()), code: NET.code, solo: NET.solo,
+  return { seed: HS.seed, nh: HS.nh, hole: HS.hole, phase: HS.phase, mode: HS.mode, wind: HS.wind, side: HS.side, cb: HS.cb ? [HS.cb.id, HS.cb.d] : null, bets: HS.bets.map(g => [g.id, g.a, g.b, g.k, g.st === 'on' ? 1 : 0]), log: HS.log, lc: HS.lastAt ? Math.max(0, HS.lastAt - now()) : 0, hel: HS.phase === 'play' ? now() - HS.holeStart : 0, rules: HS.rules, game: HS.game, left: Math.max(0, HS.until - now()), code: NET.code, solo: NET.solo,
     pl: [...HS.players.values()].map(r => ({ id: r.id, n: r.n, slot: r.slot, sc: r.sc.slice(0, HS.nh), tm: r.tm.slice(0, HS.nh), k: r.k, dn: r.dn, p: r.p, y: r.y, lie: r.lie, si: r.si, sh: r.sh, bz: r.bz, ld: r.ld, wt: r.wt, fn: r.fn || 0, fb: r.fb || 0, hc: !!r.hc, cp: r.cp || null, tol: r.tol, hit: !!r.hit, cw: r.cw || 0, lw: r.lw || 0, bw: r.bw || 0 })) };
 }
 function hostGame(solo) {
@@ -2224,7 +2253,7 @@ function hostRecv(id, m) {
   const r = HS.players.get(id); if (!r) return;
   switch (m.t) {
     case 'ball': {
-      if (HS.phase !== 'play') return;
+      if (HS.phase !== 'play' || r.dn) return; // a hole that's over for you (holed, picked up, timed out) stays over
       r.k = m.k | 0; r.p = Array.isArray(m.p) ? m.p.slice(0, 3).map(Number) : r.p; r.lie = String(m.lie || ''); r.dn = !!m.dn;
       if (r.dn) { r.sc[HS.hole] = r.k; r.tm[HS.hole] = m.pu ? TIME_CAP : clamp(now() - HS.holeStart, 0, TIME_CAP); }
       if (m.drive > 0) r.hd = Math.max(r.hd || 0, +m.drive);
@@ -2328,7 +2357,7 @@ function hostRecv(id, m) {
 function hostStart() {
   HS.game++; HS.hole = 0; HS.phase = 'play'; HS.holeStart = now() + INTRO_MS;
   for (const r of HS.players.values()) { r.sc = Array(18).fill(null); r.k = 0; r.dn = false; r.hit = false; r.p = null; r.tm = Array(18).fill(null); r.si = 0; r.sh = 0; r.ld = 0; r.wt = 0; r.hd = 0; r.fn = 0; r.fb = 0; r.hc = false; r.cp = null; r.cw = 0; r.lw = 0; r.bw = 0; }
-  HS.cb = null; HS.bets = []; HS.log = [];
+  HS.cb = null; HS.bets = []; HS.log = []; HS.lastAt = 0;
   bcastState(); hostRule('hole', 0);
 }
 function hostCheck() {
@@ -2382,8 +2411,20 @@ function hostTick(t) {
     for (const r of HS.players.values()) if (!r.dn) { r.dn = true; r.sc[HS.hole] = r.k; r.tm[HS.hole] = TIME_CAP; changed = true; sendTo(r.id, { t: 'timeout' }); bcast({ t: 'feed', m: '⏱ ' + r.n + ' ran out of time' }); }
     if (changed) { bcastState(); hostCheck(); }
   }
+  // time mode: once everyone else is done, the last one out has 15 seconds, then takes a 30-second penalty
+  if (HS.phase === 'play' && HS.mode === 'time' && HS.players.size > 1 && t >= HS.holeStart) {
+    const out = [...HS.players.values()].filter(r => !r.dn);
+    if (out.length !== 1) HS.lastAt = 0;
+    else if (!HS.lastAt) {
+      HS.lastAt = t + LAST_MS; sendTo(out[0].id, { t: 'lastcall' });
+      bcastExcept(out[0].id, { t: 'feed', m: '⏱ ' + out[0].n + ' is the last one out: 15 seconds to hole out' }); bcastState();
+    } else if (t >= HS.lastAt) {
+      const r = out[0]; r.dn = true; r.sc[HS.hole] = r.k; r.tm[HS.hole] = Math.min(TIME_CAP, t - HS.holeStart + LAST_PEN); HS.lastAt = 0;
+      sendTo(r.id, { t: 'timeout', pen: 1 }); bcast({ t: 'feed', m: '⏱ ' + r.n + " didn't make it: 30-second penalty" }); bcastState(); hostCheck();
+    }
+  }
   if (HS.phase === 'card' && t >= HS.until) {
-    if (HS.hole + 1 < HS.nh) { HS.hole++; HS.phase = 'play'; HS.holeStart = now() + INTRO_MS; HS.cb = null; HS.bets = []; for (const r of HS.players.values()) { r.k = 0; r.dn = false; r.hit = false; r.p = null; r.lie = 'tee'; r.hd = 0; r.hc = false; r.cp = null; } }
+    if (HS.hole + 1 < HS.nh) { HS.hole++; HS.phase = 'play'; HS.holeStart = now() + INTRO_MS; HS.cb = null; HS.bets = []; HS.lastAt = 0; for (const r of HS.players.values()) { r.k = 0; r.dn = false; r.hit = false; r.p = null; r.lie = 'tee'; r.hd = 0; r.hc = false; r.cp = null; } }
     else HS.phase = 'final';
     bcastState();
     if (HS.phase === 'play') hostRule('hole', 0);
@@ -2471,7 +2512,8 @@ function clientRecv(m) {
     case 'timeout':
       if (P.done || !S || S.phase !== 'play') break;
       if (CART.driving || RUN.on) endTravel(true);
-      P.done = true; P.pend = null; MT.st = 'idle'; showBanner("⏱ Time's up!", fmtTime(TIME_CAP) + ' for this hole', 3000); SFX.aww(); V.mode = 'done'; V.t0 = now(); break;
+      P.done = true; P.pend = null; MT.st = 'idle'; showBanner("⏱ Time's up!", m.pen ? '30-second penalty' : fmtTime(TIME_CAP) + ' for this hole', 3000); SFX.aww(); V.mode = 'done'; V.t0 = now(); break;
+    case 'lastcall': if (!P.done) { showBanner('⏱ 15 seconds!', "You're the last one out. Hole out or take a 30-second penalty", 3000); SFX.tick(); } break;
     case 'atk': if (HOLE && S && S.phase === 'play' && m.id !== ME.id) spawnAtk(m.a, m.p, m.v, false, m.id); break;
     case 'bonk': {
       const A = ATKS.find(a => a.id === m.a); if (A) A.dead = true;
@@ -2504,7 +2546,7 @@ function clientRecv(m) {
   }
 }
 function applyState(s) {
-  const prev = S; S = s; S.until = now() + (s.left || 0); S.holeStart = now() - (s.hel || 0);
+  const prev = S; S = s; S.until = now() + (s.left || 0); S.holeStart = now() - (s.hel || 0); S.lastAt = s.lc ? now() + s.lc : 0;
   const me = s.pl.find(p => p.id === ME.id); if (me) { ME.slot = me.slot; sleeveMat.color.set(PCOL[me.slot]); }
   // balls for everyone in the game
   const ids = new Set(s.pl.map(p => p.id));
@@ -2643,7 +2685,7 @@ for (const [id, k] of [['cGas', 'gas'], ['cBrake', 'brake'], ['cLeft', 'left'], 
   el.addEventListener('contextmenu', e => e.preventDefault());
 }
 $('bCam').onclick = () => { SET.cam = !SET.cam; saveSet(); segSet('camSeg', SET.cam ? 1 : 0); };
-$('swingBtn').addEventListener('pointerdown', e => { e.preventDefault(); swingPress(); });
+$('swingBtn').addEventListener('pointerdown', e => { e.preventDefault(); swingPress(e.timeStamp); });
 $('clubPrev').onclick = () => changeClub(-1); $('clubNext').onclick = () => changeClub(1);
 $('skipBtn').onclick = () => { const B = BALLS.get(ME.id); if (B && B.anim) B.anim.speed = 8; };
 $('specPrev').onclick = () => pickSpec(-1); $('specNext').onclick = () => pickSpec(1);
@@ -2692,10 +2734,13 @@ const endDrag = e => { if (drag.id === e.pointerId) drag.id = null; };
 canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
 canvas.addEventListener('wheel', e => { if (V.mode === 'aim') { e.preventDefault(); changeClub(e.deltaY > 0 ? 1 : -1); } }, { passive: false });
 const keys = new Set();
+// On a computer: key labels on the buttons, and no on-screen pedals (see .kb in the page styles)
+document.body.classList.toggle('kb', !!(window.matchMedia && matchMedia('(hover: hover) and (pointer: fine)').matches));
 addEventListener('keydown', e => {
   if (e.target && (e.target.tagName === 'INPUT')) return;
+  document.body.classList.add('kb');
   const k = e.key.toLowerCase();
-  if (k === ' ' || k === 'enter') { if (!$('hud').hidden && $('pause').hidden) { e.preventDefault(); if (!e.repeat) swingPress(); } return; }
+  if (k === ' ' || k === 'enter') { if (!$('hud').hidden && $('pause').hidden) { e.preventDefault(); if (!e.repeat) swingPress(e.timeStamp); } return; }
   if (k === 'tab') { e.preventDefault(); if (S && !$('hud').hidden) $('bCard').click(); return; }
   if (k === 'escape') { if (!$('cardOv').hidden && $('cardOv').dataset.kind !== 'final') $('cardOv').hidden = true; else if (!$('hud').hidden) $('bMenu').click(); return; }
   if ($('hud').hidden || e.repeat) { keys.add(k); return; }
@@ -2757,5 +2802,5 @@ function frame() {
 buildHole((Math.random() * 1e9) | 0, 0, 9);
 requestAnimationFrame(frame);
 // for automated tests
-window.__tipsy = { updateMeter, toHost, applyGfx, SET, scene,  ATK, ATKS, startAtk, hitAtk, stopAtk, getOutOfCart, getInCart, drunk, P, V, MT, BUZZ, CART, RUN, FUN, cartIn, startTravel, endTravel, skipToBall, funnelRelease, S: () => S, HOLE: () => HOLE, NET, HS, simulate, swingPress, drink, CLUBS, buildHole, camera, renderer, BALLS, hiccups, BET, betTargets, contestOf, TOL, prompt: () => curPrompt, POST, poseGolfer };
+window.__tipsy = { updateMeter, toHost, applyGfx, SET, scene,  ATK, ATKS, startAtk, hitAtk, stopAtk, getOutOfCart, getInCart, drunk, P, V, MT, BUZZ, CART, RUN, FUN, cartIn, startTravel, endTravel, skipToBall, funnelRelease, S: () => S, HOLE: () => HOLE, NET, HS, simulate, swingPress, drink, CLUBS, buildHole, camera, renderer, BALLS, hiccups, BET, betTargets, contestOf, TOL, prompt: () => curPrompt, POST, poseGolfer, meterTo, puttTick, puttTickV };
 })();

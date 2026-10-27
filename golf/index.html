@@ -179,6 +179,12 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
 #sideBox{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}#sideBox:empty{display:none}
 .sg{padding:5px 9px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);font-size:13px}
 .pl .tol{font-weight:400;font-size:13px}
+/* on a computer: key labels on buttons, keyboard hints instead of on-screen pedals */
+.kb [data-key]{position:relative}
+.kb [data-key]::after{content:attr(data-key);position:absolute;right:-5px;bottom:-5px;min-width:15px;padding:0 4px;border-radius:5px;background:#0d1f15;border:1px solid rgba(255,255,255,.35);color:#e9f3ec;font:600 10px/15px system-ui,sans-serif;letter-spacing:0;text-align:center;pointer-events:none;text-transform:none}
+.kb #ccL,.kb #ccR{display:none}
+.khint{display:none}.kb .khint{display:block;font-size:12px;color:var(--muted);margin-top:6px}
+.hot{color:#ff6b5a}
 #fnChip{position:absolute;left:50%;top:calc(70px + var(--safe-t));transform:translateX(-50%);border-color:var(--beer);background:rgba(8,22,14,.8)}
 #bAtk{position:absolute;right:12px;top:44%;width:66px;height:66px;border-radius:50%;cursor:pointer;border:3px solid #fff4;background:radial-gradient(circle at 35% 30%,#ffb08a,#e2462e 75%);color:#fff;font-size:24px;line-height:1;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 6px 16px rgba(0,0,0,.45);touch-action:manipulation;font-family:var(--display)}
 #bAtk small{font-size:14px;font-family:var(--display)}
@@ -265,12 +271,12 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
   <div id="topR">
     <div id="tbtns">
       <button class="ib" id="bBet" title="Bet a friend on this hole" hidden>🤝</button>
-      <button class="ib" id="bCart" title="Golf cart (F)">🚗</button>
-      <button class="ib" id="bCheers" title="Cheers! (H)">🍻</button>
-      <button class="ib" id="bZoom" title="Zoom (Z)">🔭</button>
-      <button class="ib" id="bCam" title="Ball cam (C)">🎥</button>
-      <button class="ib" id="bCard" title="Scorecard (Tab)">📋</button>
-      <button class="ib" id="bMenu" title="Menu (Esc)">☰</button>
+      <button class="ib" id="bCart" data-key="F" title="Golf cart (F)">🚗</button>
+      <button class="ib" id="bCheers" data-key="H" title="Cheers! (H)">🍻</button>
+      <button class="ib" id="bZoom" data-key="Z" title="Zoom (Z)">🔭</button>
+      <button class="ib" id="bCam" data-key="C" title="Ball cam (C)">🎥</button>
+      <button class="ib" id="bCard" data-key="Tab" title="Scorecard (Tab)">📋</button>
+      <button class="ib" id="bMenu" data-key="Esc" title="Menu (Esc)">☰</button>
     </div>
     <canvas id="mini" width="236" height="336" title="Tap to enlarge"></canvas>
     <div id="board" class="hcard"></div>
@@ -278,7 +284,7 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
   <div id="banner" hidden><div class="b1" id="bn1"></div><div class="b2" id="bn2"></div></div>
   <button class="btn small" id="skipBtn" hidden>Skip ⏩</button>
   <div id="specBar" class="hcard" hidden><button class="ib" id="specPrev">◀</button><span id="specName">Watching</span><button class="ib" id="specNext">▶</button></div>
-  <button id="bAtk" title="Attack ball: tap to aim, tap again to fire (X)" hidden>🎯<small>5</small></button>
+  <button id="bAtk" data-key="X" title="Attack ball: tap to aim, tap again to fire (X)" hidden>🎯<small>5</small></button>
   <div id="xhair" hidden></div>
   <div id="funnel" class="hcard" hidden>
     <div class="pe">🍺</div><div class="pt">Funnel for a golf cart?</div>
@@ -298,23 +304,23 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
   <div id="prompt" class="hcard" hidden><div class="pe" id="prE">🍺</div><div class="pt" id="prT">Drink!</div><div class="ps" id="prS"></div><div class="pc" id="prC"></div><div class="row"><button class="btn primary" id="prYes">Done 🍺</button><button class="btn" id="prNo">Skip</button></div></div>
   <div id="cartCtl" hidden>
     <div class="cc" id="ccL"><button class="pedal" id="cLeft">◀</button><button class="pedal" id="cRight">▶</button></div>
-    <div id="ccMid" class="hcard"><div id="cSpeed">0 mph</div><div id="cDist"></div><div class="row" style="justify-content:center;gap:6px"><button class="btn small" id="cHonk" title="Honk (G)">📯</button><button class="btn small" id="cOut" title="Get out of the cart (E)">🚶 Get out</button><button class="btn small primary" id="cIn" title="Get in your cart (E)" hidden>🚗 Get in</button><button class="btn small" id="cSkip" title="Jump to your ball for a sip">⏭ Skip (sip)</button><button class="btn small primary" id="cExit" hidden>⛳ Play shot</button></div></div>
+    <div id="ccMid" class="hcard"><div id="cSpeed">0 mph</div><div id="cDist"></div><div class="row" style="justify-content:center;gap:6px"><button class="btn small" id="cHonk" data-key="G" title="Honk (G)">📯</button><button class="btn small" id="cOut" data-key="E" title="Get out of the cart (E)">🚶 Get out</button><button class="btn small primary" id="cIn" data-key="E" title="Get in your cart (E)" hidden>🚗 Get in</button><button class="btn small" id="cSkip" title="Jump to your ball for a sip">⏭ Skip (sip)</button><button class="btn small primary" id="cExit" data-key="F" hidden>⛳ Play shot</button></div><div class="khint" id="cKeys"></div></div>
     <div class="cc" id="ccR"><button class="pedal" id="cBrake">▼</button><button class="pedal gas" id="cGas">▲</button></div>
   </div>
   <div id="bottom">
     <div id="meterWrap" class="hcard">
       <div id="mMsg"></div>
-      <div id="meter"><div id="mFill"></div><div id="mZoneOk"></div><div id="mZone"></div><div id="mPow" hidden></div><div id="mTick" hidden title="Power that reaches the hole"></div><div id="mNeedle"></div></div>
+      <div id="meter"><div id="mFill"></div><div id="mZoneOk"></div><div id="mZone"></div><div id="mPow" hidden></div><div id="mTick" hidden title="Power that gets the ball to the hole on this slope"></div><div id="mNeedle"></div></div>
       <div id="meterLbl"><span>⎯ accuracy</span><span id="mHint">Space / tap SWING to start</span><span>power ⎯</span></div>
     </div>
     <div id="drinkBox" class="hcard">
       <div id="buzzRow"><span id="buzzLvl">Sober</span><span id="buzzPow">Power ×1.0</span></div>
       <div id="buzzBar"><div id="buzzFill"></div></div>
-      <div id="drinkBtns"><button class="btn" id="bSip" title="Take a sip (B)">🍺 Sip</button><button class="btn" id="bShot" title="Take a shot (N)">🥃 Shot</button></div>
+      <div id="drinkBtns"><button class="btn" id="bSip" data-key="B" title="Take a sip (B)">🍺 Sip</button><button class="btn" id="bShot" data-key="N" title="Take a shot (N)">🥃 Shot</button></div>
     </div>
     <div id="rightCol">
-      <div id="clubBox" class="hcard"><button class="ib" id="clubPrev" title="Previous club (Q)">◀</button><div id="clubName"><div class="cn">Driver</div><div class="cd">230 yds</div></div><button class="ib" id="clubNext" title="Next club (E)">▶</button></div>
-      <button id="swingBtn">SWING</button>
+      <div id="clubBox" class="hcard"><button class="ib" id="clubPrev" data-key="Q" title="Previous club (Q)">◀</button><div id="clubName"><div class="cn">Driver</div><div class="cd">230 yds</div></div><button class="ib" id="clubNext" data-key="E" title="Next club (E)">▶</button></div>
+      <button id="swingBtn" data-key="Space">SWING</button>
     </div>
   </div>
 </div>
