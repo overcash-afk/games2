@@ -9,7 +9,7 @@ First-person party golf for up to four friends. The more you drink, the farther 
 1. One person opens the page, enters a name and clicks **Host a game**.
 2. In the clubhouse, they click **Share invite link** (or **Copy link**) and send it to up to three friends. Friends can also type the six-character code under **Join a friend**.
 3. Friends open the link, enter a name and click **Join**.
-4. The host picks **Stroke play** or **Time trial**, 3, 9 or 18 holes, the **wind** (Calm, Light, Normal up to about 16 mph, Strong 13–29 mph, or Hurricane 31–55 mph; changeable mid-round from ☰), sets the house rules, rolls a new course if they like, and clicks **Tee off**.
+4. The host picks **Stroke play** or **Time trial**, 3, 9 or 18 holes, the **wind** (Calm, Light, Normal up to about 16 mph, Strong 13–29 mph, or Hurricane 31–55 mph; changeable mid-round from ☰), the side games, sets the house rules, rolls a new course if they like, and clicks **Tee off**. Everyone picks their own tolerance (see Drinking).
 
 **Time trial:** a clock runs on every hole from tee-off until you hole out, and strokes don't count. The lowest total time wins. A hole times out at 5 minutes (and **Pick up** takes the 5:00), so nobody holds up the round.
 
@@ -21,15 +21,28 @@ Players find each other through the free public PeerJS server, then connect dire
 
 - Tap **🍺 Sip** whenever you take a sip and **🥃 Shot** when you take a shot. It's on the honor system, and everyone sees a message when you drink.
 - Each sip adds +15% distance to every club, and a shot counts as three sips, up to ×4 (putts get half the boost).
-- It's built for chaos. As you drink, your aim sways harder, the swing meter speeds up and shakes, and random hooks and slices creep in. Shanks become more likely (up to a 30% chance), and past five drinks you get hiccups that jolt your aim mid-swing. The screen also blurs, tilts and doubles. You can turn the visual effects off in the menu; the gameplay effects stay.
+- It's built for chaos. As you drink, your aim sways harder, the swing needle speeds up and shakes, and random hooks and slices creep in. Shanks become more likely (up to a 30% chance), and past five drinks you get hiccups that jolt your aim between swings (never the needle mid-swing). The screen also blurs, tilts and doubles. You can turn the visual effects off in the menu; the gameplay effects stay.
+- **Your tolerance** (clubhouse, or ☰ mid-round) sets how much drinking gets to your swing needle. Everyone sees each other's pick next to their name, and a change mid-round is announced. Drinks add the same power whichever you pick.
+  - 🪶 **Light Weight**: the needle gets up to 50% faster and shakes the most.
+  - 🍻 **Weekend Drinker** (the default): up to 30% faster, with less shake.
+  - 🏋️ **Heavy Weight**: up to 15% faster, with barely any shake.
 - Your buzz wears off at one sip every four minutes, so keep sipping to keep the power.
 - Your *drunk level* (wobble, blur, shanks, hiccups) is your buzz plus any funnels. A funnel adds +3 drunk level but no power.
 
 ### House rules
 
-The host sets the drinking rules in the clubhouse, and can change them from the ☰ menu mid-round. Each rule is *when this happens* → *who drinks* (that player, everyone else or everyone) → *sip or shot*, plus optional custom words that show up in the prompt ("waterfall", "chug while singing"…). Triggers: ball in the water, out of bounds, bunker, hitting a tree, shanks, three-putts, double bogey or worse, birdie or better, hole in one, worst or best score on a hole, longest drive on a hole, getting run over, running someone over, driving a cart into water, running into water, tripping, funneling a beer, getting hit by an attack ball, hitting someone with one, and the start of every hole. When a rule fires, the right people get a prompt with a **Done** button that logs the drink. Rules are saved in the host's browser for next time; **Defaults** restores the starter set.
+The host sets the drinking rules in the clubhouse, and can change them from the ☰ menu mid-round. Each rule is *when this happens* → *who drinks* (that player, everyone else or everyone) → *sip or shot*, plus optional custom words that show up in the prompt ("waterfall", "chug while singing"…). Triggers: ball in the water, out of bounds, bunker, hitting a tree, shanks, three-putts, double bogey or worse, birdie or better, hole in one, worst or best score on a hole, longest drive on a hole, getting run over, running someone over, driving a cart into water, running into water, tripping, funneling a beer, getting hit by an attack ball, hitting someone with one, winning Closest to the Pin or the Long Drive, and the start of every hole. When a rule fires, the right people get a prompt with a **Done** button that logs the drink. Rules are saved in the host's browser for next time; **Defaults** restores the starter set.
 
 For adults of legal drinking age. Pace yourself, drink some water, and nobody drives home.
+
+## Side games
+
+The host turns them on in the clubhouse: **Both** (the default), **Closest to the Pin**, **Long Drive** or **Off**.
+
+- **Closest to the Pin** runs on every par 3. Your tee shot has to finish on the green, and the closest one wins (an ace beats everything).
+- **Long Drive** runs on every par 5. Your drive has to finish in the fairway, and the longest one wins.
+- On contest holes the hole banner and the info card name the contest and show the current leader. The feed announces each new leader and the winner. Winners appear on the scorecard and in the final awards, and the default house rules make everyone else take a sip (*Wins Closest to the Pin*, *Wins the Long Drive contest*).
+- **Bets:** on the tee, tap **🤝** to bet a friend a sip or a shot that you beat them on this hole (lower score, or faster time in a time trial). They get **Accept** or **Decline**; an offer nobody answers within 25 seconds is declined. An offer expires when either of you tees off. Accepted bets show on your info card. When the hole ends, the loser gets a prompt to drink, and on a tie you both do. One bet per pair per hole. Settled bets appear on the scorecard, and the final awards name the Hustler (most bets won).
 
 ## Getting to your ball: funnel or run
 

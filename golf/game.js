@@ -8,7 +8,7 @@
 // others can watch it fly. Transport: WebRTC data channels introduced by the
 // public PeerJS broker, or a BroadcastChannel between tabs of one browser.
 // ============================================================================
-const VERSION = 1, MAX_PLAYERS = 4, PEER_PREFIX = 'tipsylinks-';
+const VERSION = 2, MAX_PLAYERS = 4, PEER_PREFIX = 'tipsylinks-';
 const $ = id => document.getElementById(id);
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -29,7 +29,7 @@ function vnoise(x, y, s) {
 }
 function fbm(x, y, s, oct) { let t = 0, a = 1, f = 1, n = 0; for (let i = 0; i < oct; i++) { t += vnoise(x * f, y * f, s + i * 17) * a; n += a; a *= 0.5; f *= 2.03; } return t / n; }
 
-const SET = { name: '', snd: true, cam: false, fx: true, gfx: window.matchMedia && matchMedia('(pointer: coarse)').matches ? 'medium' : 'high' };
+const SET = { name: '', snd: true, cam: false, fx: true, tol: 'weekend', side: 'both', gfx: window.matchMedia && matchMedia('(pointer: coarse)').matches ? 'medium' : 'high' };
 try { Object.assign(SET, JSON.parse(localStorage.getItem('tipsylinks.set') || '{}')); } catch (e) {}
 const saveSet = () => { try { localStorage.setItem('tipsylinks.set', JSON.stringify(SET)); } catch (e) {} };
 
@@ -141,6 +141,10 @@ const PARS18 = [4, 4, 3, 5, 4, 3, 4, 5, 4, 4, 3, 5, 4, 4, 3, 4, 5, 4];
 const WIND = { calm: { a: 0, b: 0 }, light: { a: 0, b: 0.5 }, normal: { a: 0, b: 1 }, strong: { a: 6, b: 1 }, hurricane: { a: 14, b: 1.5 } };
 function applyWind(H, level) { const w = WIND[level] || WIND.normal, sp = w.a + w.b * H.windBase; H.wind = { x: Math.cos(H.windA) * sp, z: Math.sin(H.windA) * sp, s: sp }; }
 const holePar = (idx, nh) => nh === 3 ? [4, 3, 5][idx] : PARS18[idx % 18];
+// Side games: Closest to the Pin on every par 3 and Long Drive on every par 5, whichever the host turned on.
+const CONTEST = { ctp: ['📏', 'Closest to the Pin'], ld: ['💪', 'Long Drive'] };
+const SIDES = { both: 'Both', ctp: 'Closest to the Pin', ld: 'Long Drive', off: 'Off' };
+const contestOf = (idx, nh, side) => { const p = holePar(idx, nh), on = side || 'both'; return p === 3 && (on === 'both' || on === 'ctp') ? 'ctp' : p === 5 && (on === 'both' || on === 'ld') ? 'ld' : ''; };
 function courseName(seed) {
   const A = ['Whiskey', 'Bourbon', 'Lager', 'Tipsy', 'Hangover', 'Barley', 'Shandy', 'Stumble', 'Pint', 'Last Call', 'Happy Hour', 'Mulligan', 'Bogey', 'Hazy'];
   const B = ['Pines', 'Links', 'Hollow', 'Dunes', 'Creek', 'National', 'Downs', 'Glen', 'Valley', 'Ridge', 'Meadows', 'Springs', 'Oaks', 'Bay'];
@@ -1056,8 +1060,9 @@ function startHole(s) {
   P.club = autoClub(); P.yaw = autoAim(); V.look = 0;
   MT.st = 'idle'; MT.follow = 0; MT.swingA = 0;
   V.mode = 'intro'; V.t0 = now(); V.spec = 0;
-  const yd = yds(HOLE.total);
-  showBanner('Hole ' + (s.hole + 1), 'Par ' + HOLE.par + ' · ' + yd + ' yds', V.introDur);
+  const yd = yds(HOLE.total), cz = contestOf(s.hole, s.nh, s.side);
+  showBanner('Hole ' + (s.hole + 1), 'Par ' + HOLE.par + ' · ' + yd + ' yds' + (cz ? ' · ' + CONTEST[cz].join(' ') : ''), V.introDur);
+  dropBetPrompts(); BET.open = false;
   closeOverlays();
 }
 function beginAim() {
@@ -1067,6 +1072,13 @@ function beginAim() {
 
 // ----- swinging -----
 const ZONE = 0.04, ZONE_OK = 0.1, METER_MIN = -0.15;
+// Each player's tolerance: how much faster and shakier the needle gets per unit of drunk level, and the most it ever gets.
+const TOL = {
+  light: { n: 'Light Weight', e: '🪶', sp: 0.05, spMax: 0.5, jit: 0.005, jitMax: 0.05 },
+  weekend: { n: 'Weekend Drinker', e: '🍻', sp: 0.03, spMax: 0.3, jit: 0.003, jitMax: 0.03 },
+  heavy: { n: 'Heavy Weight', e: '🏋️', sp: 0.015, spMax: 0.15, jit: 0.0015, jitMax: 0.015 },
+};
+const tolOf = k => TOL[k] || TOL.weekend;
 // The swing only ever moves on when you press: nothing is set or hit for you.
 function swingPress() {
   const t = now(); if (t - (MT.lastPress || 0) < 150) return; // one press, one step, even if a key or tap bounces
@@ -1080,7 +1092,7 @@ function swingPress() {
 }
 function updateMeter(dt) {
   if (MT.st !== 'up' && MT.st !== 'down') return;
-  const b = drunk(), sp = 1 + 0.05 * b; MT.t += dt;
+  const b = drunk(), T = tolOf(SET.tol), sp = 1 + Math.min(T.spMax, T.sp * b); MT.t += dt;
   const putt = CLUBS[P.club].putt;
   if (MT.st === 'up') {
     // the power needle bounces between empty and full until you set it
@@ -1090,7 +1102,7 @@ function updateMeter(dt) {
     // at least half a second from setting power to reaching the white line, however short the swing
     MT.x -= dt * Math.min(1.125 * sp, Math.max(MT.pow, 0.08) / 0.5);
   }
-  const jit = (Math.sin(MT.t * 13.1) * 0.6 + Math.sin(MT.t * 7.3 + 1) * 0.4) * 0.006 * b;
+  const jit = (Math.sin(MT.t * 13.1) * 0.6 + Math.sin(MT.t * 7.3 + 1) * 0.4) * Math.min(T.jitMax, T.jit * b);
   MT.disp = clamp(MT.x + jit, METER_MIN, 1);
   // missed the white line entirely: call the swing off instead of hitting it for you
   if (MT.st === 'down' && MT.x <= METER_MIN) { MT.st = 'idle'; MT.swingA = 0; MT.msg = 'Too late! Swing again'; MT.msgT = now(); SFX.tick(); }
@@ -1133,7 +1145,7 @@ function takeShot() {
 }
 function finishShot() {
   const R = P.pend; if (!R) return; P.pend = null;
-  const res = R.res, H = HOLE, par = H.par;
+  const res = R.res, H = HOLE, par = H.par, first = P.firstShot;
   P.strokes++; if (R.putt || R.wasGreen) P.putts++;
   let feed = '', water = false, ob = false, drive = 0;
   if (res.out === 'holed') {
@@ -1154,6 +1166,9 @@ function finishShot() {
   }
   P.firstShot = false;
   P.lie = P.done ? 'green' : surfAt(H, P.pos.x, P.pos.z);
+  // side games: a tee shot on the green (Closest to the Pin) or a drive in the fairway (Long Drive)
+  const ctp = !first ? -1 : res.out === 'holed' ? 0 : res.out === 'rest' && P.lie === 'green' ? +distToPin(P.pos.x, P.pos.z).toFixed(2) : -1;
+  const fw = drive > 0 && P.lie === 'fairway' ? 1 : 0;
   if (R.shank) ev('shank');
   if (res.ev.some(x => x[1] === 'tree')) ev('tree');
   if (res.out === 'rest' && P.lie === 'sand' && !R.putt) ev('bunker');
@@ -1165,7 +1180,7 @@ function finishShot() {
   if (!P.done && res.out === 'rest') toast((R.putt ? '' : SURF[P.lie].name) + dist + (R.putt ? fmtDist(distToPin(P.pos.x, P.pos.z)) + ' left' : ''));
   const wasTravelling = CART.driving || RUN.on;
   if (P.done) { if (wasTravelling) endTravel(true); holeOut(); if (wasTravelling) V.t0 -= 600; }
-  toHost({ t: 'ball', p: [P.pos.x, P.pos.y, P.pos.z], k: P.strokes, lie: P.lie, dn: P.done, drive, water, ob, feed });
+  toHost({ t: 'ball', p: [P.pos.x, P.pos.y, P.pos.z], k: P.strokes, lie: P.lie, dn: P.done, drive, water, ob, feed, ctp, fw });
   if (!P.done) startTravel({ x: P.prev.x, z: P.prev.z, yaw: P.yaw });
 }
 function scoreName(k, par) {
@@ -1492,6 +1507,14 @@ function updateHud(t) {
     const lm = lieMult(P.club, P.lie);
     setHTML($('iLine2'), 'Lie: <b>' + SURF[P.lie].name + '</b>' + (lm < 0.99 ? ' (−' + Math.round((1 - lm) * 100) + '% distance)' : ''));
   }
+  // side games: this hole's contest and your bets
+  const cz = contestOf(S.hole, S.nh, S.side), side = [];
+  if (cz) side.push(CONTEST[cz].join(' ') + (S.cb ? ': <b>' + esc(playerName(S.cb[0])) + '</b> ' + (cz === 'ctp' ? fmtDist(S.cb[1]) : yds(S.cb[1]) + ' yds') : cz === 'ctp' ? ': tee shot on the green' : ': drive in the fairway'));
+  for (const g of S.bets || []) if (g[1] === ME.id || g[2] === ME.id) side.push('🤝 vs ' + esc(playerName(g[1] === ME.id ? g[2] : g[1])) + ' · ' + g[3] + (g[4] ? '' : ' (waiting)'));
+  setHTML($('iSide'), side.join('<br>')); $('iSide').hidden = !side.length;
+  const bt = betTargets(); if (!bt.length || V.mode === 'atk') BET.open = false;
+  $('bBet').hidden = !bt.length || V.mode === 'atk'; $('bBet').classList.toggle('on', BET.open); $('betBox').hidden = !BET.open;
+  if (BET.open) setHTML($('betWho'), bt.map(q => '<button class="btn" data-id="' + q.id + '"><span class="dot" style="background:' + PCOL[q.slot] + '"></span>' + esc(q.n) + '</button>').join(''));
   const ws = H.wind.s * MPH;
   setText($('windTxt'), ws < 1 ? 'Calm' : Math.round(ws) + ' mph');
   const rel = Math.atan2(H.wind.x, -H.wind.z) - V.camYaw;
@@ -1578,8 +1601,27 @@ const PQ = []; let curPrompt = null, promptTimer = 0;
 function queuePrompt(p) { PQ.push(p); if (!curPrompt) nextPrompt(); }
 function nextPrompt() {
   clearTimeout(promptTimer); curPrompt = PQ.shift() || null; const el = $('prompt'); el.hidden = !curPrompt; if (!curPrompt) return;
-  setText($('prE'), curPrompt.e); setText($('prT'), curPrompt.t); setText($('prS'), curPrompt.s); setText($('prC'), curPrompt.c ? '“' + curPrompt.c + '”' : ''); setText($('prYes'), curPrompt.k === 'shot' ? 'Done 🥃' : 'Done 🍺');
-  el.classList.remove('pop'); void el.offsetWidth; promptTimer = setTimeout(nextPrompt, 25000);
+  setText($('prE'), curPrompt.e); setText($('prT'), curPrompt.t); setText($('prS'), curPrompt.s); setText($('prC'), curPrompt.c ? '“' + curPrompt.c + '”' : '');
+  setText($('prYes'), curPrompt.bet ? 'Accept 🤝' : curPrompt.k === 'shot' ? 'Done 🥃' : 'Done 🍺'); setText($('prNo'), curPrompt.bet ? 'Decline' : 'Skip');
+  el.classList.remove('pop'); void el.offsetWidth; promptTimer = setTimeout(() => answerPrompt(false), 25000);
+}
+function answerPrompt(yes) {
+  const p = curPrompt;
+  if (p && p.bet) toHost({ t: 'betans', id: p.bet, ok: yes ? 1 : 0 });
+  else if (p && yes) drink(p.k === 'shot' ? 'shot' : 'sip');
+  nextPrompt();
+}
+// a bet offer that's gone (someone teed off, or the hole ended); no id drops them all
+function dropBetPrompts(id) {
+  for (let i = PQ.length - 1; i >= 0; i--) if (PQ[i].bet && (id == null || PQ[i].bet === id)) PQ.splice(i, 1);
+  if (curPrompt && curPrompt.bet && (id == null || curPrompt.bet === id)) nextPrompt();
+}
+// ----- bets: on the tee, bet a friend a sip or a shot that you beat them on this hole -----
+const BET = { open: false, k: 'sip' };
+function betTargets() {
+  if (!S || S.phase !== 'play' || !HOLE || !P.firstShot || P.pend || P.done || S.pl.length < 2) return [];
+  const has = id => (S.bets || []).some(g => (g[1] === ME.id && g[2] === id) || (g[1] === id && g[2] === ME.id));
+  return S.pl.filter(q => q.id !== ME.id && !q.hit && !q.dn && !has(q.id));
 }
 // world-space labels
 const markerEls = new Map();
@@ -1662,7 +1704,7 @@ function drawMini() {
     g.fillStyle = B.color; g.strokeStyle = '#000'; g.lineWidth = 1.5; g.beginPath(); g.arc(bx, bz, B.id === ME.id ? 5 : 4, 0, 7); g.fill(); g.stroke();
   }
 }
-// Past five drinks you get hiccups: they jolt your aim and the swing meter.
+// Past five drinks you get hiccups: they jolt your aim between swings, never the swing meter.
 function hiccups(t) {
   const b = drunk();
   if (b <= 5 || !HOLE || !S || S.phase !== 'play') { V.hicAt = 0; return; }
@@ -1670,7 +1712,7 @@ function hiccups(t) {
   if (t < V.hicAt) return;
   V.hicAt = t + (7000 + Math.random() * 12000) * 8 / b;
   SFX.hic(); V.shakeT = t; V.shakeA = 0.25;
-  if (V.mode === 'aim') { MT.msg = '*hic*'; MT.msgT = t; if (MT.st === 'idle') P.yaw += (Math.random() - 0.5) * 0.12 * b / 10; else MT.x += (Math.random() - 0.5) * 0.14; }
+  if (V.mode === 'aim') { MT.msg = '*hic*'; MT.msgT = t; if (MT.st === 'idle') P.yaw += (Math.random() - 0.5) * 0.12 * b / 10; }
 }
 function drunkFx(t) {
   const b = drunk(), on = SET.fx && b > 2.5 && V.mode !== 'none';
@@ -1703,7 +1745,7 @@ function renderCard() {
   h += '<tr><th class="nm">Par</th>'; let tp = 0; for (let i = 0; i < nh; i++) { tp += holePar(i, nh); h += '<th class="' + (i === cur ? 'cur' : '') + '">' + holePar(i, nh) + '</th>'; } h += '<th>' + tp + '</th><th></th><th></th></tr>';
   const rows = S.pl.slice().sort((a, b) => rankKey(a) - rankKey(b));
   for (const p of rows) {
-    h += '<tr><td class="nm"><span style="color:' + PCOL[p.slot] + '">●</span> ' + esc(p.n) + '</td>';
+    h += '<tr><td class="nm"><span style="color:' + PCOL[p.slot] + '">●</span> ' + esc(p.n) + ' <span title="' + tolOf(p.tol).n + '">' + tolOf(p.tol).e + '</span></td>';
     if (tmode) {
       for (let i = 0; i < nh; i++) { const v = p.tm && p.tm[i]; h += '<td class="' + (i === cur ? 'cur' : '') + '">' + (v != null ? fmtTime(v) : '–') + '</td>'; }
       h += '<td><b>' + (totalTime(p) ? fmtTime(totalTime(p)) : '–') + '</b></td><td>' + (strokesTotal(p) || '–') + '</td><td>' + (p.si + p.sh + (p.fn || 0)) + '</td></tr>';
@@ -1719,10 +1761,19 @@ function renderCard() {
     h += '<td><b>' + (strokesTotal(p) || '–') + '</b></td><td class="tp ' + (t < 0 ? 'u' : t > 0 ? 'o' : '') + '">' + fmtPar(t) + '</td><td>' + (p.si + p.sh + (p.fn || 0)) + '</td></tr>';
   }
   setHTML($('cardTable'), h);
+  setHTML($('sideBox'), sideHtml(kind === 'hole' ? S.hole : -1));
   const fin = kind === 'final';
   $('awards').hidden = !fin; $('finalBtns').hidden = !fin; $('cardClose').hidden = fin;
   $('againBtn').hidden = !(fin && NET.role === 'host');
   if (fin) setHTML($('awards'), awardsHtml());
+}
+// Contest winners and settled bets, for one hole or (-1) the whole round
+function sideHtml(hole) {
+  return (S.log || []).filter(g => hole < 0 || g[1] === hole).map(g => {
+    const h = '<span class="sg"><b>H' + (g[1] + 1) + '</b> ';
+    if (g[0] === 'bet') return h + '🤝 ' + (g[5] ? esc(playerName(g[5])) + ' beat ' + esc(playerName(g[5] === g[2] ? g[3] : g[2])) + ' (' + g[4] + ')' : esc(playerName(g[2])) + ' & ' + esc(playerName(g[3])) + ' tied (both ' + g[4] + ')') + '</span>';
+    return h + CONTEST[g[0]][0] + ' ' + CONTEST[g[0]][1] + ': ' + esc(playerName(g[2])) + ', ' + (g[0] === 'ctp' ? fmtDist(g[3]) : yds(g[3]) + ' yds') + '</span>';
+  }).join('');
 }
 function awardsHtml() {
   const pl = S.pl; if (!pl.length) return '';
@@ -1733,6 +1784,10 @@ function awardsHtml() {
   if (mx > 0) { const w = pl.filter(p => drinks(p) === mx); A.push(['🍺', 'Thirstiest', w.map(p => p.n).join(' & '), [[w[0].si, 'sip'], [w[0].sh, 'shot'], [w[0].fn || 0, 'funnel']].filter(x => x[0]).map(x => x[0] + ' ' + x[1] + (x[0] === 1 ? '' : 's')).join(', ')]); }
   const fb = pl.filter(p => p.fb > 0).sort((a, b) => a.fb - b.fb)[0]; if (fb) A.push(['🍻', 'Fastest funnel', fb.n, (fb.fb / 1000).toFixed(1) + ' s']);
   const ld = Math.max(...pl.map(p => p.ld)); if (ld > 0) { const w = pl.find(p => p.ld === ld); A.push(['💥', 'Longest drive', w.n, yds(ld) + ' yds']); }
+  for (const [f, e, t, u] of [['cw', '📏', 'Pin seeker', ' Closest to the Pin win'], ['lw', '💪', 'Long Drive champ', ' Long Drive win'], ['bw', '🤝', 'Hustler', ' bet']]) {
+    const mx = Math.max(...pl.map(p => p[f] || 0)); if (mx <= 0) continue;
+    A.push([e, t, pl.filter(p => (p[f] || 0) === mx).map(p => p.n).join(' & '), mx + u + (mx === 1 ? '' : 's') + (f === 'bw' ? ' won' : '')]);
+  }
   const wt = Math.max(...pl.map(p => p.wt)); if (wt > 0) { const w = pl.filter(p => p.wt === wt); A.push(['🐟', 'Fish food', w.map(p => p.n).join(' & '), wt + ' water ball' + (wt > 1 ? 's' : '')]); }
   if (pl.length > 1) { const mn = Math.min(...pl.map(drinks)); if (mn < mx) { const w = pl.filter(p => drinks(p) === mn); A.push(['🚗', 'Designated driver', w.map(p => p.n).join(' & '), mn + ' drink' + (mn === 1 ? '' : 's')]); } }
   return A.map(([e, t, w, d]) => '<div class="award"><div class="em">' + e + '</div><div class="t">' + t + '</div><div class="w">' + esc(w) + '</div><div class="d">' + esc(d) + '</div></div>').join('');
@@ -1761,6 +1816,8 @@ const TRIG = {
   funnel: ['🍺', 'Funnel!', 'Funnels a beer', 'funneled a beer'],
   bonked: ['🎯', 'Bonk!', 'Gets hit by an attack ball', 'got beaned by an attack ball'],
   bonker: ['💥', 'Sniper', 'Hits someone with an attack ball', 'beaned someone with an attack ball'],
+  ctpwin: ['📏', 'Closest to the Pin', 'Wins Closest to the Pin', 'won Closest to the Pin'],
+  ldwin: ['💪', 'Long Drive champ', 'Wins the Long Drive contest', 'won the Long Drive contest'],
   hole: ['⛳', 'New hole', 'Start of every hole', ''],
 };
 const WHO = [['me', 'That player'], ['others', 'Everyone else'], ['all', 'Everyone']];
@@ -1769,6 +1826,7 @@ const defaultRules = () => [
   { w: 'water', who: 'me', k: 'sip', txt: '' }, { w: 'oob', who: 'me', k: 'sip', txt: '' }, { w: 'threeputt', who: 'me', k: 'sip', txt: '' },
   { w: 'blowup', who: 'me', k: 'sip', txt: '' }, { w: 'worst', who: 'me', k: 'sip', txt: '' }, { w: 'birdie', who: 'others', k: 'sip', txt: '' },
   { w: 'ace', who: 'others', k: 'shot', txt: '' }, { w: 'cartwater', who: 'me', k: 'shot', txt: '' }, { w: 'swim', who: 'me', k: 'sip', txt: '' },
+  { w: 'ctpwin', who: 'others', k: 'sip', txt: '' }, { w: 'ldwin', who: 'others', k: 'sip', txt: '' },
 ];
 function cleanRules(a) {
   if (!Array.isArray(a)) return [];
@@ -1842,18 +1900,19 @@ function peerErr(e) {
 }
 const inviteLink = () => location.href.split(/[?#]/)[0] + '?join=' + NET.code;
 // ----- host -----
-const HS = { seed: 0, nh: 9, hole: 0, phase: 'lobby', mode: 'stroke', wind: 'normal', holeStart: 0, rules: [], until: 0, game: 0, nextId: 1, players: new Map(), lastState: 0 };
+const HS = { seed: 0, nh: 9, hole: 0, phase: 'lobby', mode: 'stroke', wind: 'normal', side: 'both', holeStart: 0, rules: [], until: 0, game: 0, nextId: 1, players: new Map(), lastState: 0, cb: null, bets: [], betId: 0, log: [] };
 const cleanName = n => (String(n || '').replace(/[^\p{L}\p{N} ._'-]/gu, '').trim().slice(0, 14)) || 'Golfer';
-function newRec(id, n, slot) { return { id, n, slot, sc: Array(18).fill(null), tm: Array(18).fill(null), k: 0, dn: false, p: null, y: 0, lie: 'tee', si: 0, sh: 0, bz: 0, ld: 0, wt: 0, ob: 0, fn: 0, fb: 0, hc: false, cp: null }; }
+function newRec(id, n, slot, tol) { return { id, n, slot, tol: TOL[tol] ? tol : 'weekend', sc: Array(18).fill(null), tm: Array(18).fill(null), k: 0, dn: false, hit: false, p: null, y: 0, lie: 'tee', si: 0, sh: 0, bz: 0, ld: 0, wt: 0, ob: 0, fn: 0, fb: 0, hc: false, cp: null, cw: 0, lw: 0, bw: 0 }; }
 function freeSlot() { const used = new Set([...HS.players.values()].map(p => p.slot)); for (let i = 0; i < MAX_PLAYERS; i++) if (!used.has(i)) return i; return 0; }
 function stateObj() {
-  return { seed: HS.seed, nh: HS.nh, hole: HS.hole, phase: HS.phase, mode: HS.mode, wind: HS.wind, hel: HS.phase === 'play' ? now() - HS.holeStart : 0, rules: HS.rules, game: HS.game, left: Math.max(0, HS.until - now()), code: NET.code, solo: NET.solo,
-    pl: [...HS.players.values()].map(r => ({ id: r.id, n: r.n, slot: r.slot, sc: r.sc.slice(0, HS.nh), tm: r.tm.slice(0, HS.nh), k: r.k, dn: r.dn, p: r.p, y: r.y, lie: r.lie, si: r.si, sh: r.sh, bz: r.bz, ld: r.ld, wt: r.wt, fn: r.fn || 0, fb: r.fb || 0, hc: !!r.hc, cp: r.cp || null })) };
+  return { seed: HS.seed, nh: HS.nh, hole: HS.hole, phase: HS.phase, mode: HS.mode, wind: HS.wind, side: HS.side, cb: HS.cb ? [HS.cb.id, HS.cb.d] : null, bets: HS.bets.map(g => [g.id, g.a, g.b, g.k, g.st === 'on' ? 1 : 0]), log: HS.log, hel: HS.phase === 'play' ? now() - HS.holeStart : 0, rules: HS.rules, game: HS.game, left: Math.max(0, HS.until - now()), code: NET.code, solo: NET.solo,
+    pl: [...HS.players.values()].map(r => ({ id: r.id, n: r.n, slot: r.slot, sc: r.sc.slice(0, HS.nh), tm: r.tm.slice(0, HS.nh), k: r.k, dn: r.dn, p: r.p, y: r.y, lie: r.lie, si: r.si, sh: r.sh, bz: r.bz, ld: r.ld, wt: r.wt, fn: r.fn || 0, fb: r.fb || 0, hc: !!r.hc, cp: r.cp || null, tol: r.tol, hit: !!r.hit, cw: r.cw || 0, lw: r.lw || 0, bw: r.bw || 0 })) };
 }
 function hostGame(solo) {
   leaveNet(); NET.role = 'host'; NET.solo = solo;
   HS.seed = (Math.random() * 2147483647) | 0; HS.nh = 9; HS.hole = 0; HS.phase = 'lobby'; HS.rules = cleanRules(SET.houseRules || defaultRules()); HS.game = 0; HS.nextId = 1; HS.players.clear();
-  ME.id = 1; HS.players.set(1, newRec(1, ME.name, 0));
+  HS.side = SIDES[SET.side] ? SET.side : 'both'; HS.cb = null; HS.bets = []; HS.log = [];
+  ME.id = 1; HS.players.set(1, newRec(1, ME.name, 0, SET.tol));
   if (!solo) hostOpen(randCode()); else NET.code = '';
   clientRecv({ t: 'welcome', id: 1, s: stateObj() });
 }
@@ -1900,7 +1959,7 @@ function hostLinkRx(L, m) {
 function hostHello(L, m) {
   if (m.v !== VERSION) { linkSend(L, { t: 'bye', why: 'The host is on a different version. Both of you, reload the page.' }); return; }
   if (HS.players.size >= MAX_PLAYERS) { linkSend(L, { t: 'bye', why: 'That game is full (four players max).' }); return; }
-  const id = ++HS.nextId, rec = newRec(id, cleanName(m.n), freeSlot());
+  const id = ++HS.nextId, rec = newRec(id, cleanName(m.n), freeSlot(), m.tol);
   HS.players.set(id, rec); L.pid = id; NET.links.set(id, L);
   linkSend(L, { t: 'welcome', id, s: stateObj() });
   bcastState(); bcast({ t: 'feed', m: '👋 ' + rec.n + ' joined' });
@@ -1908,7 +1967,7 @@ function hostHello(L, m) {
 function dropLink(L) {
   if (L.kind === 'bc') NET.bcLinks.delete(L.tok);
   if (!L.pid || NET.links.get(L.pid) !== L) return;
-  NET.links.delete(L.pid); const r = HS.players.get(L.pid); HS.players.delete(L.pid);
+  NET.links.delete(L.pid); const r = HS.players.get(L.pid); HS.players.delete(L.pid); dropBets(g => g.a === L.pid || g.b === L.pid);
   try { L.c && L.c.close(); } catch (e) {}
   if (r) { bcast({ t: 'feed', m: r.n + ' left' }); bcastState(); hostCheck(); }
 }
@@ -1926,20 +1985,47 @@ function hostRecv(id, m) {
       if (m.drive > 0) r.hd = Math.max(r.hd || 0, +m.drive);
       if (m.drive > r.ld) { r.ld = +m.drive; if (m.drive > 0 && yds(m.drive) >= 250) bcast({ t: 'feed', m: '💥 ' + r.n + ' crushed it ' + yds(m.drive) + ' yds' }); }
       if (m.water) r.wt++;
+      const cz = contestOf(HS.hole, HS.nh, HS.side), cv = cz === 'ctp' ? +m.ctp : cz === 'ld' && m.fw ? +m.drive : -1;
+      if (cv >= 0 && (!HS.cb || (cz === 'ctp' ? cv < HS.cb.d : cv > HS.cb.d))) {
+        HS.cb = { id, d: cv };
+        bcast({ t: 'feed', m: cz === 'ctp' ? '📏 ' + r.n + (cv === 0 ? ' aced it!' : ' is closest to the pin: ' + fmtDist(cv)) : '💪 ' + r.n + ' leads the Long Drive: ' + yds(cv) + ' yds' });
+      }
       if (r.dn) { const d = r.k - holePar(HS.hole, HS.nh); bcastExcept(id, { t: 'feed', m: r.n + ': ' + scoreName(r.k, holePar(HS.hole, HS.nh)) + (d === 0 || r.k === 1 ? '' : ' (' + r.k + ')') }); }
       else if (m.water) bcastExcept(id, { t: 'feed', m: '💦 ' + r.n + ' found the water' });
       else if (m.ob) bcastExcept(id, { t: 'feed', m: '🚫 ' + r.n + ' went out of bounds' });
       bcastState(); break;
     }
-    case 'shot': bcastExcept(id, { t: 'shot', id, pts: Array.isArray(m.pts) ? m.pts : [], dt: +m.dt || 1 / 15, y: +m.y || 0, ev: Array.isArray(m.ev) ? m.ev : [] }); r.y = +m.y || 0; break;
+    case 'shot':
+      bcastExcept(id, { t: 'shot', id, pts: Array.isArray(m.pts) ? m.pts : [], dt: +m.dt || 1 / 15, y: +m.y || 0, ev: Array.isArray(m.ev) ? m.ev : [] }); r.y = +m.y || 0;
+      if (!r.hit && HS.phase === 'play') { r.hit = true; dropBets(g => g.st === 'off' && (g.a === id || g.b === id), 'teed off'); bcastState(); }
+      break;
     case 'aim': r.y = +m.y || 0; bcastExcept(id, { t: 'aim', id, y: r.y }); break;
     case 'drink': {
       if (m.k === 'shot') r.sh++; else r.si++; r.bz = +m.bz || 0;
       bcast({ t: 'feed', m: m.k === 'shot' ? '🥃 ' + r.n + ' took a shot!' : m.skip ? '⏭ ' + r.n + ' took a sip to skip to their ball' : '🍺 ' + r.n + ' took a sip' }); bcastState(); break;
     }
     case 'bz': r.bz = +m.bz || 0; break;
+    case 'tol':
+      if (!TOL[m.v] || r.tol === m.v) break;
+      r.tol = m.v; if (HS.phase === 'play') bcast({ t: 'feed', m: TOL[m.v].e + ' ' + r.n + ' is now a ' + TOL[m.v].n });
+      bcastState(); break;
+    case 'bet': {
+      const o = HS.players.get(+m.to), k = m.k === 'shot' ? 'shot' : 'sip';
+      if (HS.phase !== 'play' || !o || o.id === id) break;
+      const no = r.hit || r.dn ? 'Bets lock once you tee off' : o.hit || o.dn ? o.n + ' already teed off' : HS.bets.some(g => (g.a === id && g.b === o.id) || (g.a === o.id && g.b === id)) ? 'You already have a bet with ' + o.n + ' on this hole' : '';
+      if (no) { sendTo(id, { t: 'feed', m: no }); break; }
+      const g = { id: ++HS.betId, a: id, b: o.id, k, st: 'off' }; HS.bets.push(g);
+      sendTo(o.id, { t: 'betoff', id: g.id, by: id, k });
+      bcast({ t: 'feed', m: '🤝 ' + r.n + ' bet ' + o.n + ' a ' + k + ' on this hole' }); bcastState(); break;
+    }
+    case 'betans': {
+      const g = HS.bets.find(x => x.id === +m.id && x.b === id && x.st === 'off'), a = g && HS.players.get(g.a); if (!g || !a) break;
+      if (m.ok) { g.st = 'on'; bcast({ t: 'feed', m: '🤝 ' + r.n + ' took ' + a.n + "'s bet: loser takes a " + g.k }); }
+      else { HS.bets.splice(HS.bets.indexOf(g), 1); bcast({ t: 'feed', m: '🐔 ' + r.n + ' passed on ' + a.n + "'s bet" }); }
+      bcastState(); break;
+    }
     case 'ev': {
-      if (HS.phase !== 'play' || !TRIG[m.e] || ['worst', 'best', 'longdrive', 'hole', 'runover', 'runner', 'funnel', 'bonked', 'bonker'].includes(m.e)) break;
+      if (HS.phase !== 'play' || !TRIG[m.e] || ['worst', 'best', 'longdrive', 'hole', 'runover', 'runner', 'funnel', 'bonked', 'bonker', 'ctpwin', 'ldwin'].includes(m.e)) break;
       if (m.e === 'cartwater') bcast({ t: 'feed', m: '🌊 ' + r.n + ' drove a cart into the water' });
       hostRule(m.e, id); break;
     }
@@ -1983,6 +2069,7 @@ function hostRecv(id, m) {
       if (id !== ME.id) break;
       if (m.rules) { HS.rules = cleanRules(m.rules); SET.houseRules = HS.rules; saveSet(); }
       if (m.mode && HS.phase === 'lobby') HS.mode = m.mode === 'time' ? 'time' : 'stroke';
+      if (m.side && SIDES[m.side] && HS.phase === 'lobby') { HS.side = m.side; SET.side = m.side; saveSet(); }
       if (m.wind && WIND[m.wind] && m.wind !== HS.wind) { HS.wind = m.wind; if (HS.phase === 'play') bcast({ t: 'feed', m: '🌬️ Wind set to ' + m.wind }); }
       if (HS.phase === 'lobby') { if (m.nh) HS.nh = [3, 9, 18].includes(m.nh) ? m.nh : 9; if (m.reseed) HS.seed = (Math.random() * 2147483647) | 0; }
       bcastState(); break;
@@ -1994,21 +2081,52 @@ function hostRecv(id, m) {
 }
 function hostStart() {
   HS.game++; HS.hole = 0; HS.phase = 'play'; HS.holeStart = now() + INTRO_MS;
-  for (const r of HS.players.values()) { r.sc = Array(18).fill(null); r.k = 0; r.dn = false; r.p = null; r.tm = Array(18).fill(null); r.si = 0; r.sh = 0; r.ld = 0; r.wt = 0; r.hd = 0; r.fn = 0; r.fb = 0; r.hc = false; r.cp = null; }
+  for (const r of HS.players.values()) { r.sc = Array(18).fill(null); r.k = 0; r.dn = false; r.hit = false; r.p = null; r.tm = Array(18).fill(null); r.si = 0; r.sh = 0; r.ld = 0; r.wt = 0; r.hd = 0; r.fn = 0; r.fb = 0; r.hc = false; r.cp = null; r.cw = 0; r.lw = 0; r.bw = 0; }
+  HS.cb = null; HS.bets = []; HS.log = [];
   bcastState(); hostRule('hole', 0);
 }
 function hostCheck() {
   if (HS.phase === 'play' && HS.players.size && [...HS.players.values()].every(r => r.dn)) {
     HS.phase = 'card'; HS.until = now() + (HS.players.size > 1 ? 11000 : 7000);
+    const hv = r => HS.mode === 'time' ? r.tm[HS.hole] : r.sc[HS.hole];
+    hostSideGames(hv);
     // hole-wide house rules: worst score, outright winner, longest drive
     if (HS.players.size > 1) {
-      const hv = r => HS.mode === 'time' ? r.tm[HS.hole] : r.sc[HS.hole];
       const pl = [...HS.players.values()], sc = pl.map(hv), worst = Math.max(...sc), best = Math.min(...sc);
       if (worst !== best) { for (const r of pl) if (hv(r) === worst) hostRule('worst', r.id); const b = pl.filter(r => hv(r) === best); if (b.length === 1) hostRule('best', b[0].id); }
       const ld = Math.max(...pl.map(r => r.hd || 0)), lw = pl.filter(r => (r.hd || 0) === ld);
       if (ld > 0 && lw.length === 1) hostRule('longdrive', lw[0].id);
     }
     bcastState();
+  }
+}
+// End of a hole: crown the contest winner and settle the bets (lower score, or faster time, wins; a tie means both drink).
+function hostSideGames(hv) {
+  const cz = contestOf(HS.hole, HS.nh, HS.side), w = HS.cb && HS.players.get(HS.cb.id);
+  if (cz && w) {
+    w[cz === 'ctp' ? 'cw' : 'lw']++; HS.log.push([cz, HS.hole, w.id, HS.cb.d]);
+    bcast({ t: 'feed', m: CONTEST[cz][0] + ' ' + w.n + ' wins ' + CONTEST[cz][1] + ' (' + (cz === 'ctp' ? fmtDist(HS.cb.d) : yds(HS.cb.d) + ' yds') + ')' });
+    hostRule(cz + 'win', w.id);
+  }
+  for (const g of HS.bets) {
+    const A = HS.players.get(g.a), B = HS.players.get(g.b); if (g.st !== 'on' || !A || !B) continue;
+    const va = hv(A), vb = hv(B), win = va < vb ? A : vb < va ? B : null, lose = win === A ? B : A;
+    HS.log.push(['bet', HS.hole, A.id, B.id, g.k, win ? win.id : 0]);
+    if (win) {
+      win.bw++; bcast({ t: 'feed', m: '🤝 ' + win.n + ' won the bet: ' + lose.n + ' takes a ' + g.k });
+      sendTo(lose.id, { t: 'prompt', p: { e: '🤝', t: 'You lost the bet', s: win.n + ' beat you on this hole. Take a ' + g.k + '.', c: '', k: g.k } });
+    } else {
+      bcast({ t: 'feed', m: '🤝 ' + A.n + ' and ' + B.n + ' tied their bet: both take a ' + g.k });
+      for (const q of [A, B]) sendTo(q.id, { t: 'prompt', p: { e: '🤝', t: 'Tied bet', s: 'You tied with ' + (q === A ? B : A).n + ', so you both take a ' + g.k + '.', c: '', k: g.k } });
+    }
+  }
+  dropBets(() => true); HS.cb = null;
+}
+// Remove bets (and any offer still waiting for an answer); `why` tells the challenger it expired.
+function dropBets(f, why) {
+  for (const g of HS.bets.filter(f)) {
+    HS.bets.splice(HS.bets.indexOf(g), 1);
+    if (g.st === 'off') { sendTo(g.b, { t: 'betx', id: g.id }); if (why) { const a = HS.players.get(g.a), b = HS.players.get(g.b); if (a && b) sendTo(g.a, { t: 'feed', m: 'Bet off: ' + b.n + ' didn\'t answer before someone ' + why }); } }
   }
 }
 function hostTick(t) {
@@ -2019,7 +2137,7 @@ function hostTick(t) {
     if (changed) { bcastState(); hostCheck(); }
   }
   if (HS.phase === 'card' && t >= HS.until) {
-    if (HS.hole + 1 < HS.nh) { HS.hole++; HS.phase = 'play'; HS.holeStart = now() + INTRO_MS; for (const r of HS.players.values()) { r.k = 0; r.dn = false; r.p = null; r.lie = 'tee'; r.hd = 0; r.hc = false; r.cp = null; } }
+    if (HS.hole + 1 < HS.nh) { HS.hole++; HS.phase = 'play'; HS.holeStart = now() + INTRO_MS; HS.cb = null; HS.bets = []; for (const r of HS.players.values()) { r.k = 0; r.dn = false; r.hit = false; r.p = null; r.lie = 'tee'; r.hd = 0; r.hc = false; r.cp = null; } }
     else HS.phase = 'final';
     bcastState();
     if (HS.phase === 'play') hostRule('hole', 0);
@@ -2059,7 +2177,7 @@ function joinGame(code) {
     peer.on('error', e => { if (NET.role !== 'guest' || NET.link) return; giveUp(peerErr(e)); });
   }, 350);
 }
-function guestHello() { setMenuStatus('Connected. Joining…'); NET.lastHostMsg = now(); guestSend({ t: 'hello', v: VERSION, n: ME.name }); }
+function guestHello() { setMenuStatus('Connected. Joining…'); NET.lastHostMsg = now(); guestSend({ t: 'hello', v: VERSION, n: ME.name, tol: SET.tol }); }
 function guestSend(m) {
   const L = NET.link; if (!L) return;
   try { if (L.kind === 'bc') NET.bc.postMessage({ from: NET.tok, m }); else if (L.c && L.c.open) L.c.send(m); } catch (e) {}
@@ -2098,6 +2216,8 @@ function clientRecv(m) {
     }
     case 'aim': { const B = BALLS.get(m.id); if (B) B.yaw = m.y; break; }
     case 'prompt': queuePrompt(m.p); break;
+    case 'betoff': queuePrompt({ e: '🤝', t: 'Bet?', s: playerName(m.by) + ' bets you a ' + (m.k === 'shot' ? 'shot' : 'sip') + ' they beat you on this hole. Loser drinks; tie, you both do.', c: '', k: m.k, bet: m.id }); SFX.tick(); break;
+    case 'betx': dropBetPrompts(m.id); break;
     case 'cheers': toast('🍻 ' + m.n + ' says cheers!'); SFX.clink(); break;
     case 'timeout':
       if (P.done || !S || S.phase !== 'play') break;
@@ -2182,13 +2302,13 @@ function renderLobby() {
   $('lobbyCodeBox').hidden = !!S.solo;
   setText($('lobbyCode'), NET.code || S.code || '------');
   setText($('pcount'), '(' + S.pl.length + '/' + MAX_PLAYERS + ')');
-  let h = ''; for (const p of S.pl) h += '<div class="pl"><span class="dot" style="background:' + PCOL[p.slot] + '"></span>' + esc(p.n) + (p.id === 1 ? ' <span class="muted">· host</span>' : '') + (p.id === ME.id ? '<span class="you">you</span>' : '') + '</div>';
+  let h = ''; for (const p of S.pl) h += '<div class="pl"><span class="dot" style="background:' + PCOL[p.slot] + '"></span>' + esc(p.n) + (p.id === 1 ? ' <span class="muted">· host</span>' : '') + ' <span class="muted tol">' + tolOf(p.tol).e + ' ' + tolOf(p.tol).n + '</span>' + (p.id === ME.id ? '<span class="you">you</span>' : '') + '</div>';
   if (!S.solo) for (let i = S.pl.length; i < MAX_PLAYERS; i++) h += '<div class="pl empty">Open spot: share the link</div>';
   setHTML($('lobbyPlayers'), h);
   $('hostOpts').hidden = !host; $('guestWait').hidden = host;
   setText($('courseName'), courseName(S.seed) + ' · par ' + Array.from({ length: S.nh }, (_, i) => holePar(i, S.nh)).reduce((a, b) => a + b, 0));
-  setText($('courseNameG'), courseName(S.seed)); setText($('holesG'), S.nh + ' holes · ' + (S.mode === 'time' ? 'time trial ⏱' : 'stroke play') + ' · ' + (S.wind || 'normal') + ' wind');
-  segSet('holesSeg', S.nh); segSet('modeSeg', S.mode || 'stroke'); segSet('windSeg', S.wind || 'normal');
+  setText($('courseNameG'), courseName(S.seed)); setText($('holesG'), S.nh + ' holes · ' + (S.mode === 'time' ? 'time trial ⏱' : 'stroke play') + ' · ' + (S.wind || 'normal') + ' wind · side games: ' + (SIDES[S.side] || SIDES.both));
+  segSet('holesSeg', S.nh); segSet('modeSeg', S.mode || 'stroke'); segSet('windSeg', S.wind || 'normal'); segSet('sideSeg', S.side || 'both');
 }
 function renderNet() {
   const s = NET.solo ? 'Solo game.' : NET.role === 'host' ? (NET.online === 'online' ? 'Ready. Friends can join with the code or the link.' : NET.online) : NET.role === 'guest' ? 'Connected to the host.' : '';
@@ -2220,7 +2340,7 @@ $('nameInput').addEventListener('keydown', e => { if (e.key === 'Enter') ($('joi
 $('shareBtn').onclick = share; $('copyBtn').onclick = copyLink; $('pShare').onclick = share; $('pCopy').onclick = copyLink;
 segOn('holesSeg', v => toHost({ t: 'cfg', nh: +v }));
 segOn('modeSeg', v => toHost({ t: 'cfg', mode: v }));
-segOn('windSeg', v => toHost({ t: 'cfg', wind: v })); segOn('windSeg2', v => toHost({ t: 'cfg', wind: v }));
+segOn('windSeg', v => toHost({ t: 'cfg', wind: v })); segOn('sideSeg', v => toHost({ t: 'cfg', side: v })); segOn('windSeg2', v => toHost({ t: 'cfg', wind: v }));
 wireRules($('rulesEd')); wireRules($('rulesEd2'));
 $('reseedBtn').onclick = () => toHost({ t: 'cfg', reseed: 1 });
 $('startBtn').onclick = () => { audio(); toHost({ t: 'start' }); };
@@ -2274,8 +2394,15 @@ $('clubPrev').onclick = () => changeClub(-1); $('clubNext').onclick = () => chan
 $('skipBtn').onclick = () => { const B = BALLS.get(ME.id); if (B && B.anim) B.anim.speed = 8; };
 $('specPrev').onclick = () => pickSpec(-1); $('specNext').onclick = () => pickSpec(1);
 $('mini').onclick = () => { const m = $('mini'); m.classList.toggle('big'); const r = m.getBoundingClientRect(); m.width = Math.round(r.width * 2); m.height = Math.round(r.height * 2); miniBg = null; };
-$('prYes').onclick = () => { if (curPrompt) drink(curPrompt.k === 'shot' ? 'shot' : 'sip'); nextPrompt(); };
-$('prNo').onclick = () => nextPrompt();
+$('prYes').onclick = () => answerPrompt(true);
+$('prNo').onclick = () => answerPrompt(false);
+$('bBet').onclick = () => { audio(); BET.open = !BET.open; };
+$('betClose').onclick = () => { BET.open = false; };
+segSet('betSeg', BET.k); segOn('betSeg', v => { BET.k = v === 'shot' ? 'shot' : 'sip'; segSet('betSeg', BET.k); });
+$('betWho').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; toHost({ t: 'bet', to: +b.dataset.id, k: BET.k }); BET.open = false; });
+function setTol(v) { SET.tol = TOL[v] ? v : 'weekend'; saveSet(); segSet('tolSeg', SET.tol); segSet('tolSeg2', SET.tol); if (S) toHost({ t: 'tol', v: SET.tol }); }
+if (!TOL[SET.tol]) SET.tol = 'weekend';
+segSet('tolSeg', SET.tol); segSet('tolSeg2', SET.tol); segOn('tolSeg', setTol); segOn('tolSeg2', setTol);
 segSet('sndSeg', SET.snd ? 1 : 0); segSet('camSeg', SET.cam ? 1 : 0); segSet('fxSeg', SET.fx ? 1 : 0);
 segOn('sndSeg', v => { SET.snd = v === '1'; saveSet(); segSet('sndSeg', v); });
 segOn('camSeg', v => { SET.cam = v === '1'; saveSet(); segSet('camSeg', v); });
@@ -2376,5 +2503,5 @@ function frame() {
 buildHole((Math.random() * 1e9) | 0, 0, 9);
 requestAnimationFrame(frame);
 // for automated tests
-window.__tipsy = { updateMeter, toHost, applyGfx, SET, scene,  ATK, ATKS, startAtk, hitAtk, stopAtk, getOutOfCart, getInCart, drunk, P, V, MT, BUZZ, CART, RUN, FUN, cartIn, startTravel, endTravel, skipToBall, funnelRelease, S: () => S, HOLE: () => HOLE, NET, HS, simulate, swingPress, drink, CLUBS, buildHole, camera, renderer, BALLS };
+window.__tipsy = { updateMeter, toHost, applyGfx, SET, scene,  ATK, ATKS, startAtk, hitAtk, stopAtk, getOutOfCart, getInCart, drunk, P, V, MT, BUZZ, CART, RUN, FUN, cartIn, startTravel, endTravel, skipToBall, funnelRelease, S: () => S, HOLE: () => HOLE, NET, HS, simulate, swingPress, drink, CLUBS, buildHole, camera, renderer, BALLS, hiccups, BET, betTargets, contestOf, TOL, prompt: () => curPrompt };
 })();

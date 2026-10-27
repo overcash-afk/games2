@@ -173,6 +173,12 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
 #fnTime{font-family:var(--display);font-size:36px;color:var(--beer)}
 #fnHold{width:100%;min-height:58px;font-size:19px;touch-action:none;-webkit-touch-callout:none}
 #fnHold.holding{background:linear-gradient(180deg,#9be27a,#3fa34d);border-color:#7fd05a;color:#062a10}
+#betBox{position:absolute;left:50%;top:calc(70px + var(--safe-t));transform:translateX(-50%);width:min(380px,calc(100% - 24px));padding:14px 16px;text-align:center;z-index:12;border-color:var(--accent);display:flex;flex-direction:column;align-items:center;gap:8px}
+#betBox .pe{font-size:34px;line-height:1}#betBox .pt{font-family:var(--display);font-size:22px}#betBox .ps{font-size:13px;color:var(--muted);line-height:1.4}
+#betWho{justify-content:center;flex-wrap:wrap}#betWho .btn{display:flex;align-items:center;gap:8px}#betWho .dot{width:12px;height:12px;border-radius:50%}
+#sideBox{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}#sideBox:empty{display:none}
+.sg{padding:5px 9px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);font-size:13px}
+.pl .tol{font-weight:400;font-size:13px}
 #fnChip{position:absolute;left:50%;top:calc(70px + var(--safe-t));transform:translateX(-50%);border-color:var(--beer);background:rgba(8,22,14,.8)}
 #bAtk{position:absolute;right:12px;top:44%;width:66px;height:66px;border-radius:50%;cursor:pointer;border:3px solid #fff4;background:radial-gradient(circle at 35% 30%,#ffb08a,#e2462e 75%);color:#fff;font-size:24px;line-height:1;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 6px 16px rgba(0,0,0,.45);touch-action:manipulation;font-family:var(--display)}
 #bAtk small{font-size:14px;font-family:var(--display)}
@@ -252,11 +258,13 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
     <div class="h">HOLE <span id="iHole">1</span> · PAR <span id="iPar">4</span></div>
     <div class="l" id="iLine1">412 yds</div>
     <div class="l" id="iLine2"></div>
+    <div class="l" id="iSide" hidden></div>
     <div id="wind"><svg id="windArrow" viewBox="0 0 20 20"><path d="M10 1 L16 11 L11.5 11 L11.5 19 L8.5 19 L8.5 11 L4 11 Z" fill="#cfe8ff"/></svg><span id="windTxt">Calm</span></div>
   </div>
   <div id="feed"></div>
   <div id="topR">
     <div id="tbtns">
+      <button class="ib" id="bBet" title="Bet a friend on this hole" hidden>🤝</button>
       <button class="ib" id="bCart" title="Golf cart (F)">🚗</button>
       <button class="ib" id="bCheers" title="Cheers! (H)">🍻</button>
       <button class="ib" id="bZoom" title="Zoom (Z)">🔭</button>
@@ -280,6 +288,13 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
     <button class="btn small" id="fnNo">No thanks, I'll run 🏃</button>
   </div>
   <button class="btn small" id="fnChip" hidden>🍺 Funnel for a cart</button>
+  <div id="betBox" class="hcard" hidden>
+    <div class="pe">🤝</div><div class="pt">Bet on this hole</div>
+    <div class="ps">Lower score on this hole wins (fastest time in a time trial). The loser drinks; tie, you both do. A bet locks in once your friend accepts, and offers expire when either of you tees off.</div>
+    <div class="seg" id="betSeg"><button data-v="sip">A sip 🍺</button><button data-v="shot">A shot 🥃</button></div>
+    <div class="row" id="betWho"></div>
+    <button class="btn small" id="betClose">Cancel</button>
+  </div>
   <div id="prompt" class="hcard" hidden><div class="pe" id="prE">🍺</div><div class="pt" id="prT">Drink!</div><div class="ps" id="prS"></div><div class="pc" id="prC"></div><div class="row"><button class="btn primary" id="prYes">Done 🍺</button><button class="btn" id="prNo">Skip</button></div></div>
   <div id="cartCtl" hidden>
     <div class="cc" id="ccL"><button class="pedal" id="cLeft">◀</button><button class="pedal" id="cRight">▶</button></div>
@@ -335,6 +350,8 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
     </div>
     <h3>Golfers <span id="pcount"></span></h3>
     <div class="plist" id="lobbyPlayers"></div>
+    <h3>Your tolerance</h3>
+    <div class="row"><div class="seg wrap" id="tolSeg"><button data-v="light">🪶 Light Weight</button><button data-v="weekend">🍻 Weekend Drinker</button><button data-v="heavy">🏋️ Heavy Weight</button></div><span class="muted">How much drinking speeds up and shakes your swing needle. Light Weight gets wild, Weekend Drinker a bit calmer, Heavy Weight barely notices. Drinks add the same power for everyone.</span></div>
     <div id="hostOpts">
       <h3>Course</h3>
       <div class="row"><b id="courseName" class="grow">—</b><button class="btn small" id="reseedBtn">🎲 New course</button></div>
@@ -344,6 +361,8 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
       <div class="seg" id="holesSeg"><button data-v="3">3</button><button data-v="9">9</button><button data-v="18">18</button></div>
       <h3>Wind</h3>
       <div class="row"><div class="seg wrap" id="windSeg"><button data-v="calm">Calm</button><button data-v="light">Light</button><button data-v="normal">Normal</button><button data-v="strong">Strong</button><button data-v="hurricane">Hurricane</button></div><span class="muted">Normal is up to about 16 mph; Strong 13–29; Hurricane 31–55.</span></div>
+      <h3>Side games</h3>
+      <div class="row"><div class="seg wrap" id="sideSeg"><button data-v="both">Both</button><button data-v="ctp">Closest to the Pin</button><button data-v="ld">Long Drive</button><button data-v="off">Off</button></div><span class="muted">Closest to the Pin on every par 3 (tee shot must finish on the green); Long Drive on every par 5 (drive must finish in the fairway). Anyone can also bet a friend a sip or a shot from the tee with 🤝.</span></div>
       <h3>House rules</h3>
       <p class="muted" style="margin:0 0 8px">When it happens, the game tells the right people to drink. Write anything in the last box, like "chug while singing".</p>
       <div id="rulesEd" class="rulesEd"></div>
@@ -363,6 +382,7 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
   <div class="panel wide">
     <div class="row"><h2 class="grow" id="cardTitle">Scorecard</h2><span class="muted" id="cardTimer"></span><button class="btn small" id="cardClose">Close</button></div>
     <div class="cardwrap"><table class="card" id="cardTable"></table></div>
+    <div id="sideBox"></div>
     <div id="awards" class="awards" hidden></div>
     <div class="row" id="finalBtns" style="margin-top:14px" hidden><button class="btn primary" id="againBtn">Play again (new course)</button><button class="btn" id="finalLeave">Leave</button></div>
   </div>
@@ -381,6 +401,7 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
     <div class="row"><span class="grow">Sound</span><div class="seg" id="sndSeg"><button data-v="1">On</button><button data-v="0">Off</button></div></div>
     <div class="row" style="margin-top:8px"><span class="grow">Follow the ball in flight</span><div class="seg" id="camSeg"><button data-v="0">Eyes</button><button data-v="1">Ball cam</button></div></div>
     <div class="row" style="margin-top:8px"><span class="grow">Graphics (lower it if the game stutters)</span><div class="seg" id="gfxSeg"><button data-v="high">High</button><button data-v="medium">Medium</button><button data-v="low">Low</button></div></div>
+    <div class="row" style="margin-top:8px"><span class="grow">Your tolerance (how drinking affects your swing needle)</span><div class="seg wrap" id="tolSeg2"><button data-v="light">🪶 Light</button><button data-v="weekend">🍻 Weekend</button><button data-v="heavy">🏋️ Heavy</button></div></div>
     <div class="row" style="margin-top:8px"><span class="grow">Drunk visuals (blur, double vision)</span><div class="seg" id="fxSeg"><button data-v="1">On</button><button data-v="0">Off</button></div></div>
     <h3>House rules</h3>
     <div id="rulesEd2" class="rulesEd"></div>
@@ -390,7 +411,7 @@ table.card td.cur,table.card th.cur{background:rgba(255,197,61,.12)}
       <div class="row" style="margin-top:10px"><button class="btn small" id="skipHoleBtn">End this hole for everyone</button></div>
     </div>
     <h3>Controls</h3>
-    <p class="muted">Drag (or A/D, arrow keys) to aim; hold Shift for fine aim. Drag up/down to look. Q/E or the arrows change club. Space or SWING: first press starts the backswing, second sets power, third sets accuracy when the needle comes back to the white line. Too early slices right, too late hooks left. B sips, N takes a shot. Z zooms, C toggles ball cam, Tab shows the scorecard. After each shot you travel to your ball: W/S or ▲▼ to go, A/D or ◀▶ (or drag) to steer, G honks. Funnel a beer on the tee for a cart; otherwise you run. When you reach your ball, press ⛳ Play shot (or F); ⏭ Skip jumps there for a sip. In a cart, hit a friend to run them over; E (or 🚶 Get out / 🚗 Get in) leaves and boards your cart, which stays where you leave it. 🎯 (or X) drops an attack ball at your feet, five per hole: line up the crosshair, tap SWING to start the backswing and tap again to hit it (the needle sets the speed). It flies straight at whoever is under the crosshair; a hit knocks them down or ruins their swing. Attack balls never count as strokes. Putting: the putter's full stroke scales to the putt, and the blue ⛳ tick on the meter shows the power that reaches the hole on a flat putt; the dotted line shows how the putt starts to break.</p>
+    <p class="muted">Drag (or A/D, arrow keys) to aim; hold Shift for fine aim. Drag up/down to look. Q/E or the arrows change club. Space or SWING: first press starts the backswing, second sets power, third sets accuracy when the needle comes back to the white line. Too early slices right, too late hooks left. B sips, N takes a shot. Z zooms, C toggles ball cam, Tab shows the scorecard. After each shot you travel to your ball: W/S or ▲▼ to go, A/D or ◀▶ (or drag) to steer, G honks. Funnel a beer on the tee for a cart; otherwise you run. When you reach your ball, press ⛳ Play shot (or F); ⏭ Skip jumps there for a sip. In a cart, hit a friend to run them over; E (or 🚶 Get out / 🚗 Get in) leaves and boards your cart, which stays where you leave it. 🎯 (or X) drops an attack ball at your feet, five per hole: line up the crosshair, tap SWING to start the backswing and tap again to hit it (the needle sets the speed). It flies straight at whoever is under the crosshair; a hit knocks them down or ruins their swing. Attack balls never count as strokes. On the tee, 🤝 bets a friend a sip or a shot that you beat them on the hole. Putting: the putter's full stroke scales to the putt, and the blue ⛳ tick on the meter shows the power that reaches the hole on a flat putt; the dotted line shows how the putt starts to break.</p>
     <div class="row" style="margin-top:14px"><button class="btn small" id="pickupBtn">Pick up (take max score)</button><button class="btn danger small" id="leaveBtn">Leave game</button></div>
   </div>
 </div>
