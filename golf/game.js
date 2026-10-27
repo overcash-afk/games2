@@ -1067,11 +1067,14 @@ function beginAim() {
 
 // ----- swinging -----
 const ZONE = 0.04, ZONE_OK = 0.1, METER_MIN = -0.15;
+// The swing only ever moves on when you press: nothing is set or hit for you.
 function swingPress() {
-  if (V.mode === 'atk') { audio(); if (MT.st === 'idle') { MT.st = 'up'; MT.x = 0; MT.t = 0; MT.pow = 0; MT.msg = ''; } else if (MT.st === 'up') hitAtk(); return; }
+  const t = now(); if (t - (MT.lastPress || 0) < 150) return; // one press, one step, even if a key or tap bounces
+  MT.lastPress = t;
+  if (V.mode === 'atk') { audio(); if (MT.st === 'idle') { MT.st = 'up'; MT.x = 0; MT.dir = 1; MT.t = 0; MT.pow = 0; MT.msg = ''; } else if (MT.st === 'up') hitAtk(); return; }
   if (V.mode !== 'aim') { if (V.mode === 'intro') beginAim(); return; }
   audio();
-  if (MT.st === 'idle') { MT.st = 'up'; MT.x = 0; MT.t = 0; MT.pow = 0; MT.msg = ''; }
+  if (MT.st === 'idle') { MT.st = 'up'; MT.x = 0; MT.dir = 1; MT.t = 0; MT.pow = 0; MT.msg = ''; }
   else if (MT.st === 'up') { MT.pow = clamp(MT.disp, 0.02, 1); MT.st = 'down'; SFX.whoosh(); }
   else if (MT.st === 'down') { MT.acc = MT.disp; takeShot(); }
 }
@@ -1079,11 +1082,18 @@ function updateMeter(dt) {
   if (MT.st !== 'up' && MT.st !== 'down') return;
   const b = drunk(), sp = 1 + 0.05 * b; MT.t += dt;
   const putt = CLUBS[P.club].putt;
-  if (MT.st === 'up') { MT.x += dt * (putt ? 0.585 : 0.72) * sp; if (MT.x >= 1) { MT.x = 1; MT.pow = 1; if (V.mode === 'atk') { MT.disp = 1; hitAtk(); return; } MT.st = 'down'; SFX.whoosh(); } }
-  else { MT.x -= dt * 1.125 * sp; }
+  if (MT.st === 'up') {
+    // the power needle bounces between empty and full until you set it
+    MT.x += dt * (putt ? 0.585 : 0.72) * sp * (MT.dir || 1);
+    if (MT.x >= 1) { MT.x = 1; MT.dir = -1; } else if (MT.x <= 0 && MT.dir < 0) { MT.x = 0; MT.dir = 1; }
+  } else {
+    // at least half a second from setting power to reaching the white line, however short the swing
+    MT.x -= dt * Math.min(1.125 * sp, Math.max(MT.pow, 0.08) / 0.5);
+  }
   const jit = (Math.sin(MT.t * 13.1) * 0.6 + Math.sin(MT.t * 7.3 + 1) * 0.4) * 0.006 * b;
   MT.disp = clamp(MT.x + jit, METER_MIN, 1);
-  if (MT.st === 'down' && MT.x <= METER_MIN) { MT.acc = METER_MIN; takeShot(); }
+  // missed the white line entirely: call the swing off instead of hitting it for you
+  if (MT.st === 'down' && MT.x <= METER_MIN) { MT.st = 'idle'; MT.swingA = 0; MT.msg = 'Too late! Swing again'; MT.msgT = now(); SFX.tick(); }
 }
 function swayYaw(t, putt) { const b = drunk(); return b * 0.009 * (putt ? 0.5 : 1) * (Math.sin(t * 0.00083) * 0.65 + Math.sin(t * 0.00191 + 1.3) * 0.35); }
 function takeShot() {
@@ -1758,7 +1768,7 @@ const AMT = [['sip', 'Sip 🍺'], ['shot', 'Shot 🥃']];
 const defaultRules = () => [
   { w: 'water', who: 'me', k: 'sip', txt: '' }, { w: 'oob', who: 'me', k: 'sip', txt: '' }, { w: 'threeputt', who: 'me', k: 'sip', txt: '' },
   { w: 'blowup', who: 'me', k: 'sip', txt: '' }, { w: 'worst', who: 'me', k: 'sip', txt: '' }, { w: 'birdie', who: 'others', k: 'sip', txt: '' },
-  { w: 'ace', who: 'others', k: 'shot', txt: '' }, { w: 'runover', who: 'me', k: 'shot', txt: '' }, { w: 'cartwater', who: 'me', k: 'shot', txt: '' }, { w: 'swim', who: 'me', k: 'sip', txt: '' },
+  { w: 'ace', who: 'others', k: 'shot', txt: '' }, { w: 'cartwater', who: 'me', k: 'shot', txt: '' }, { w: 'swim', who: 'me', k: 'sip', txt: '' },
 ];
 function cleanRules(a) {
   if (!Array.isArray(a)) return [];
@@ -2117,10 +2127,8 @@ function clientRecv(m) {
     case 'flat': {
       const B = BALLS.get(m.id); if (B) { B.flatT = now(); B.flatKind = 'flat'; B.flatDir = [m.dx, m.dz]; }
       if (m.id === ME.id) {
-        showBanner('RUN OVER! 🚗💥', 'by ' + playerName(m.by), 2400); V.shakeT = now(); V.shakeA = 1; SFX.thud(); SFX.aww();
-        if (V.mode === 'atk') stopAtk();
-        if (V.mode === 'aim') { MT.st = 'idle'; P.yaw += (Math.random() - 0.5) * 1.4; MT.msg = 'Knocked silly!'; MT.msgT = now(); }
-        if (V.mode === 'run') { RUN.stunUntil = now() + 1600; RUN.tripAt = now(); RUN.v = 0; RUN.p.x += (m.dx || 0) * 3; RUN.p.z += (m.dz || 0) * 3; }
+        // just for show: your swing, aim and footing are untouched
+        showBanner('RUN OVER! 🚗💥', 'by ' + playerName(m.by), 2000); V.shakeT = now(); V.shakeA = 0.35; SFX.thud();
       } else if (B && B.avatar && B.avatar.position.distanceTo(camera.position) < 60) SFX.thud();
       break;
     }
@@ -2368,5 +2376,5 @@ function frame() {
 buildHole((Math.random() * 1e9) | 0, 0, 9);
 requestAnimationFrame(frame);
 // for automated tests
-window.__tipsy = { applyGfx, SET, scene,  ATK, ATKS, startAtk, hitAtk, stopAtk, getOutOfCart, getInCart, drunk, P, V, MT, BUZZ, CART, RUN, FUN, cartIn, startTravel, endTravel, skipToBall, funnelRelease, S: () => S, HOLE: () => HOLE, NET, HS, simulate, swingPress, drink, CLUBS, buildHole, camera, renderer, BALLS };
+window.__tipsy = { updateMeter, toHost, applyGfx, SET, scene,  ATK, ATKS, startAtk, hitAtk, stopAtk, getOutOfCart, getInCart, drunk, P, V, MT, BUZZ, CART, RUN, FUN, cartIn, startTravel, endTravel, skipToBall, funnelRelease, S: () => S, HOLE: () => HOLE, NET, HS, simulate, swingPress, drink, CLUBS, buildHole, camera, renderer, BALLS };
 })();
