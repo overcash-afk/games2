@@ -8,7 +8,7 @@
 // others can watch it fly. Transport: WebRTC data channels introduced by the
 // public PeerJS broker, or a BroadcastChannel between tabs of one browser.
 // ============================================================================
-const VERSION = 2, MAX_PLAYERS = 4, PEER_PREFIX = 'tipsylinks-';
+const VERSION = 3, MAX_PLAYERS = 4, PEER_PREFIX = 'tipsylinks-';
 const $ = id => document.getElementById(id);
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -447,15 +447,15 @@ const canvas = $('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 // Graphics quality: pixel density and sun-shadow resolution (none on low). Phones default to medium.
-const GFX = { high: { dpr: 2, shadow: 2048, grass: true }, medium: { dpr: 1.5, shadow: 1024, grass: true }, low: { dpr: 1, shadow: 0, grass: false } };
+const GFX = { high: { dpr: 2, shadow: 2048, grass: true, post: true }, medium: { dpr: 1.5, shadow: 1024, grass: true, post: true }, low: { dpr: 1, shadow: 0, grass: false, post: false } };
 const scene = new THREE.Scene();
 const SKY_TOP = new THREE.Color(0x3b82d0), HORIZON = new THREE.Color(0xcde2ee);
 scene.fog = new THREE.Fog(HORIZON, 280, 1350);
 scene.background = HORIZON;
 const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 3000); camera.rotation.order = 'YXZ';
 const SUN = new THREE.Vector3(-0.45, 0.78, 0.43).normalize();
-scene.add(new THREE.HemisphereLight(0xd6ecff, 0x40602c, 0.62));
-const sunL = new THREE.DirectionalLight(0xfff0d0, 0.85); sunL.position.copy(SUN).multiplyScalar(100); scene.add(sunL, sunL.target);
+scene.add(new THREE.HemisphereLight(0xcfe4ff, 0x3b5a2a, 0.52));
+const sunL = new THREE.DirectionalLight(0xffe6c2, 1.0); sunL.position.copy(SUN).multiplyScalar(100); scene.add(sunL, sunL.target);
 // the sun's shadow box (140 m across) follows the camera; see updateSun
 Object.assign(sunL.shadow.camera, { left: -70, right: 70, top: 70, bottom: -70, near: 1, far: 500 });
 sunL.shadow.bias = -0.0005; sunL.shadow.normalBias = 0.04;
@@ -494,6 +494,41 @@ for (const [R0, lo, hi, tint, seed, k] of [[1750, 120, 400, 0x6f8fa6, 91, 0.6], 
 }
 // drawn right after the sky (not before: at this range the depth buffer can't tell them apart)
 hills.children.forEach(m => { m.renderOrder = -0.5; m.frustumCulled = false; }); scene.add(hills);
+// Color grade: the scene renders into an offscreen buffer (with room above white where the GPU allows),
+// then one full-screen pass applies film-style tone mapping, a touch more color, warm light and cool
+// shade, and a soft vignette. Low graphics skips it and draws straight to the screen.
+const POST = { on: false, rt: null, scene: new THREE.Scene(), cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), size: new THREE.Vector2() };
+POST.mat = new THREE.ShaderMaterial({
+  uniforms: { tex: { value: null }, exposure: { value: 0.9 } }, depthTest: false, depthWrite: false,
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+  fragmentShader: `uniform sampler2D tex; uniform float exposure; varying vec2 vUv;
+    vec3 aces(vec3 x){ return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+    void main(){
+      vec3 c = max(texture2D(tex, vUv).rgb, 0.0);
+      vec3 m = pow(aces(pow(c, vec3(2.2)) * exposure), vec3(1.0 / 2.2)); // the scene's colors are picked as screen colors
+      float l = dot(m, vec3(0.2126, 0.7152, 0.0722));
+      m = mix(vec3(l), m, 1.12);
+      m *= mix(vec3(0.95, 0.99, 1.06), vec3(1.035, 1.0, 0.95), smoothstep(0.15, 0.8, l));
+      vec2 q = vUv - 0.5; m *= 1.0 - dot(q, q) * 0.5;
+      gl_FragColor = vec4(m, 1.0);
+    }`,
+});
+POST.scene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), POST.mat));
+function postSize() {
+  if (!POST.on) return;
+  renderer.getDrawingBufferSize(POST.size);
+  if (!POST.rt) {
+    const gl2 = renderer.capabilities.isWebGL2, hdr = gl2 && renderer.extensions.has('EXT_color_buffer_float'), opt = { type: hdr ? THREE.HalfFloatType : THREE.UnsignedByteType };
+    POST.rt = gl2 ? new THREE.WebGLMultisampleRenderTarget(POST.size.x, POST.size.y, opt) : new THREE.WebGLRenderTarget(POST.size.x, POST.size.y, opt);
+    if (gl2) POST.rt.samples = 4;
+    POST.mat.uniforms.tex.value = POST.rt.texture;
+  } else POST.rt.setSize(POST.size.x, POST.size.y);
+}
+function render() {
+  if (!POST.on) { renderer.render(scene, camera); return; }
+  renderer.setRenderTarget(POST.rt); renderer.render(scene, camera);
+  renderer.setRenderTarget(null); renderer.render(POST.scene, POST.cam);
+}
 
 const detailTex = (() => {
   const n = 256, cv = document.createElement('canvas'); cv.width = cv.height = n; const g = cv.getContext('2d'), im = g.createImageData(n, n);
@@ -730,32 +765,176 @@ function buildHole(seed, idx, nh) {
 const BALLS = new Map(); // id -> ball record (mine included)
 const ballGeo = new THREE.SphereGeometry(BR, 14, 10), shadowGeo = new THREE.CircleGeometry(0.05, 14); shadowGeo.rotateX(-Math.PI / 2);
 const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35, depthWrite: false });
-function buildAvatar(color) {
-  const g = new THREE.Group(); g.rotation.order = 'YXZ';
-  const cm = new THREE.MeshLambertMaterial({ color }), skin = new THREE.MeshLambertMaterial({ color: 0xe2b48c }), dark = new THREE.MeshLambertMaterial({ color: 0x2b2f3a });
-  const box = (w, h, d, m, x, y, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); g.add(b); return b; };
-  const lg1 = box(0.16, 0.86, 0.18, dark, -0.11, 0.43, 0), lg2 = box(0.16, 0.86, 0.18, dark, 0.11, 0.43, 0);
-  g.userData.legs = [lg1, lg2];
-  box(0.46, 0.6, 0.26, cm, 0, 1.15, 0);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 10), skin); head.position.y = 1.62; g.add(head);
-  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.148, 0.15, 0.09, 12), cm); cap.position.y = 1.72; g.add(cap);
-  box(0.22, 0.02, 0.14, cm, 0, 1.69, -0.16);
-  const la = box(0.1, 0.55, 0.1, cm, -0.2, 1.05, -0.12); la.rotation.x = 0.5; la.rotation.z = -0.25;
-  const ra = box(0.1, 0.55, 0.1, cm, 0.2, 1.05, -0.12); ra.rotation.x = 0.5; ra.rotation.z = 0.25;
-  const club = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.0, 5), new THREE.MeshLambertMaterial({ color: 0xcfd6dd })); club.position.set(0, 0.42, -0.36); club.rotation.x = -0.42; g.add(club);
-  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
-  return g;
+// TV-style shot tracer: a glowing ribbon in the player's color that keeps a steady width on screen.
+// Each path point is two vertices; the vertex shader spreads them sideways, facing the camera.
+const TRACE_N = 1500;
+const traceSide = new THREE.BufferAttribute(new Float32Array(TRACE_N * 2).map((_, i) => i % 2 ? 1 : -1), 1);
+const traceIdx = (() => { const a = new Uint16Array((TRACE_N - 1) * 6); for (let i = 0; i < TRACE_N - 1; i++) { const v = i * 2; a.set([v, v + 1, v + 2, v + 1, v + 3, v + 2], i * 6); } return new THREE.BufferAttribute(a, 1); })();
+function traceMat(color) {
+  return new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, // which way the strip winds depends on the view
+    uniforms: { color: { value: new THREE.Color(color) }, px: { value: 0.004 }, minW: { value: 0.025 }, alpha: { value: 1 } },
+    vertexShader: `attribute vec3 tang; attribute float side; uniform float px; uniform float minW; varying float vS;
+      void main(){
+        vec4 p = modelViewMatrix * vec4(position, 1.0); vec3 t = (modelViewMatrix * vec4(tang, 0.0)).xyz;
+        vec3 s = cross(t, p.xyz); float l = length(s); s = l > 1e-6 ? s / l : vec3(1.0, 0.0, 0.0);
+        p.xyz += s * side * max(minW, -p.z * px); vS = side; gl_Position = projectionMatrix * p; }`,
+    fragmentShader: `uniform vec3 color; uniform float alpha; varying float vS;
+      void main(){ float a = abs(vS), core = 1.0 - smoothstep(0.04, 0.2, a), glow = exp(-a * a * 3.0) * (1.0 - a);
+        gl_FragColor = vec4(mix(color * 1.15, vec3(1.3), core * 0.7), clamp(glow * 0.85 + core, 0.0, 1.0) * alpha); }`,
+  });
+}
+// ----- golfers -----
+// Built from simple shapes. Each frame a pose places the joints (in the golfer's own space: feet at
+// the origin, facing -z, target on the left) and the limbs are stretched between them.
+const GOLFER = (() => {
+  const L = c => new THREE.MeshLambertMaterial({ color: c }), cyl = (rt, rb, s = 10) => new THREE.CylinderGeometry(rt, rb, 1, s);
+  return {
+    M: { skin: L(0xe0b08a), pants: L(0xcdbf98), shoe: L(0xf2f2ee), hair: L(0x3b2a1e), belt: L(0x2b2b2b), glove: L(0xffffff), grip: L(0x1e1e1e), eye: new THREE.MeshBasicMaterial({ color: 0x1b1b1b }),
+      metal: new THREE.MeshPhongMaterial({ color: 0xc9d1d9, specular: 0xffffff, shininess: 80 }) },
+    G: { thigh: cyl(0.078, 0.062), shin: cyl(0.06, 0.047), upper: cyl(0.056, 0.047), fore: cyl(0.045, 0.036), torso: cyl(0.19, 0.165, 16), neck: cyl(0.05, 0.055, 8),
+      pelvis: cyl(0.17, 0.155, 16), shaft: cyl(0.008, 0.006, 6), grip: cyl(0.014, 0.012, 6), ball: new THREE.SphereGeometry(1, 14, 10),
+      dome: new THREE.SphereGeometry(1, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), brim: new THREE.CylinderGeometry(1, 1, 1, 16, 1, false, Math.PI / 2, Math.PI),
+      collar: new THREE.TorusGeometry(0.078, 0.02, 6, 16), head: new THREE.BoxGeometry(0.035, 0.045, 0.1) },
+  };
+})();
+function buildGolfer(color) {
+  const { M, G } = GOLFER, shirt = new THREE.MeshLambertMaterial({ color }), root = new THREE.Group(); root.rotation.order = 'YXZ';
+  const mk = (geo, mat, sx = 1, sy = 1, sz = 1, par = root) => { const m = new THREE.Mesh(geo, mat); m.scale.set(sx, sy, sz); m.castShadow = true; par.add(m); return m; };
+  const U = {
+    thL: mk(G.thigh, M.pants), thR: mk(G.thigh, M.pants), sbL: mk(G.shin, M.pants), sbR: mk(G.shin, M.pants),
+    knL: mk(G.ball, M.pants, 0.06, 0.06, 0.06), knR: mk(G.ball, M.pants, 0.06, 0.06, 0.06),
+    ftL: mk(G.ball, M.shoe, 0.055, 0.042, 0.125), ftR: mk(G.ball, M.shoe, 0.055, 0.042, 0.125),
+    pel: mk(G.pelvis, M.pants, 1, 0.2, 0.75), belt: mk(G.pelvis, M.belt, 1.03, 0.04, 0.78),
+    torso: mk(G.torso, shirt), collar: mk(G.collar, shirt, 1, 0.8, 1),
+    soL: mk(G.ball, shirt, 0.072, 0.07, 0.075), soR: mk(G.ball, shirt, 0.072, 0.07, 0.075),
+    upL: mk(G.upper, shirt), upR: mk(G.upper, shirt), elL: mk(G.ball, M.skin, 0.045, 0.045, 0.045), elR: mk(G.ball, M.skin, 0.045, 0.045, 0.045),
+    foL: mk(G.fore, M.skin), foR: mk(G.fore, M.skin), haL: mk(G.ball, M.glove, 0.046, 0.05, 0.046), haR: mk(G.ball, M.skin, 0.044, 0.048, 0.044),
+    neck: mk(G.neck, M.skin), head: new THREE.Group(), club: new THREE.Group(),
+  };
+  const hd = U.head; hd.rotation.order = 'YXZ'; root.add(hd, U.club);
+  mk(G.ball, M.skin, 0.112, 0.125, 0.115, hd);
+  mk(G.ball, M.hair, 0.117, 0.105, 0.118, hd).position.set(0, -0.012, 0.014);
+  mk(G.dome, shirt, 0.122, 0.1, 0.124, hd).position.y = 0.03;
+  const brim = mk(G.brim, shirt, 0.105, 0.012, 0.11, hd); brim.position.set(0, 0.035, -0.06); brim.rotation.x = 0.15;
+  for (const x of [-0.04, 0.04]) mk(G.ball, M.eye, 0.013, 0.016, 0.01, hd).position.set(x, 0.0, -0.108);
+  mk(G.ball, M.skin, 0.018, 0.022, 0.02, hd).position.set(0, -0.03, -0.115);
+  // club: origin at the clubhead, +y up the shaft
+  mk(G.shaft, M.metal, 1, 0.97, 1, U.club).position.y = 0.485;
+  mk(G.grip, M.grip, 1, 0.25, 1, U.club).position.y = 0.845;
+  mk(G.head, M.metal, 1, 1, 1, U.club).position.set(0, 0.012, -0.035);
+  root.userData.U = U;
+  return root;
+}
+const _J = {}; for (const k of ['pel', 'chest', 'headP', 'shL', 'shR', 'elL', 'elR', 'haL', 'haR', 'hipL', 'hipR', 'knL', 'knR', 'ftL', 'ftR', 'hand', 'tip']) _J[k] = new THREE.Vector3();
+const UPV = new THREE.Vector3(0, 1, 0), _gb = new THREE.Vector3(), _gd = new THREE.Vector3(), _ia = new THREE.Vector3(), _ib = new THREE.Vector3(), _sv = new THREE.Vector3(), _m1 = new THREE.Vector3(), _m2 = new THREE.Vector3(), _tq = new THREE.Quaternion();
+// The swing: hands and club turn about the swing plane's axis around a point between the shoulders.
+const GP = { piv: new THREE.Vector3(0, 1.3, -0.14), n: new THREE.Vector3(0, 0.41, -0.91).normalize(), hands: new THREE.Vector3(-0.04, 0.84, -0.36), dir: new THREE.Vector3(-0.01, -0.81, -0.36).normalize(), len: 0.89 };
+// knee or elbow between A and B (limb length L), pushed toward `bend`
+function ik(out, A, B, L, bend) {
+  _ia.subVectors(B, A); const l = _ia.length(), h = l < L ? Math.sqrt((L * L - l * l) / 4) : 0;
+  _ib.copy(bend).addScaledVector(_ia, -bend.dot(_ia) / (l * l || 1)); const bl = _ib.length();
+  return out.addVectors(A, B).multiplyScalar(0.5).addScaledVector(_ib, bl > 1e-6 ? h / bl : 0);
+}
+function segTo(m, A, B, sx = 1, sz = 1, twist = 0) {
+  _sv.subVectors(A, B); const l = _sv.length() || 1e-4;
+  m.position.addVectors(A, B).multiplyScalar(0.5); m.quaternion.setFromUnitVectors(UPV, _sv.divideScalar(l));
+  if (twist) m.quaternion.multiply(_tq.setFromAxisAngle(UPV, twist));
+  m.scale.set(sx, l, sz);
+}
+// kind: 'addr' (a = swing angle: negative back, positive through; b = putting), 'run' (a = stride phase, b = speed 0..1),
+// 'sit' (driving a cart), 'celeb' (a = 'good' | 'par' | 'bad'; b = seconds since holing out)
+function poseGolfer(g, kind, a, b) {
+  const J = _J, O = { tw: 0, ptw: 0, hy: 0, hp: 0, fpL: 0, fpR: 0, club: false };
+  if (kind === 'addr') {
+    const th = a, putt = !!b, fin = putt ? 0 : Math.max(0, th) / 2.1, back = putt ? 0 : Math.max(0, -th) / 1.9, tw = th * (putt ? 0.12 : 0.42);
+    J.pel.set(-0.07 * fin + 0.03 * back, 0.9 + 0.04 * fin, 0.06 - 0.06 * fin);
+    J.chest.set(J.pel.x - 0.03 * fin, 1.3 + 0.08 * fin, -0.14 + 0.13 * fin);
+    J.hipL.set(-0.1, -0.02, 0).applyAxisAngle(UPV, tw * 0.45).add(J.pel); J.hipR.set(0.1, -0.02, 0).applyAxisAngle(UPV, tw * 0.45).add(J.pel);
+    J.ftL.set(-0.2, 0.06, 0.02); J.ftR.set(0.2 - 0.1 * fin, 0.06 + 0.06 * fin, 0.02 + 0.04 * fin);
+    ik(J.knL, J.hipL, J.ftL, 0.88, _gb.set(-0.2 * fin, 0, -1)); ik(J.knR, J.hipR, J.ftR, 0.88, _gb.set(-1.2 * fin, 0, -1));
+    J.shL.set(-0.19, 0.03, 0.02).applyAxisAngle(UPV, tw).add(J.chest); J.shR.set(0.19, 0.01, 0.03).applyAxisAngle(UPV, tw).add(J.chest);
+    // the wrists hinge on the way back and release through the ball
+    const thc = putt ? th : th + (th < 0 ? th * 0.55 : th * 0.3);
+    J.hand.copy(GP.hands).sub(GP.piv).applyAxisAngle(GP.n, th).add(GP.piv);
+    _gd.copy(GP.dir).applyAxisAngle(GP.n, thc);
+    J.tip.copy(J.hand).addScaledVector(_gd, GP.len);
+    J.haL.copy(J.hand).addScaledVector(_gd, -0.03); J.haR.copy(J.hand).addScaledVector(_gd, 0.06);
+    ik(J.elL, J.shL, J.haL, 0.6, _gb.set(0.1, -1, 0.5)); ik(J.elR, J.shR, J.haR, 0.6, _gb.set(-0.1, -1, 0.5));
+    J.headP.set(0, 0.19, -0.09 + 0.09 * fin).add(J.chest);
+    O.tw = tw; O.ptw = tw * 0.45; O.hp = -0.55 * (1 - fin) + 0.1 * fin; O.hy = fin * 0.9 - back * 0.1; O.fpR = -0.9 * fin; O.club = true;
+  } else if (kind === 'run') {
+    const s = b, bob = Math.abs(Math.sin(a)) * 0.05 * s;
+    J.pel.set(0, 0.92 + bob, 0); J.chest.set(0, 1.35 + bob, -0.1 * s);
+    J.hipL.set(-0.09, 0.9 + bob, 0); J.hipR.set(0.09, 0.9 + bob, 0);
+    for (const [hip, kn, ft, sh, el, ha, x, p] of [[J.hipL, J.knL, J.ftL, J.shL, J.elL, J.haL, -1, a], [J.hipR, J.knR, J.ftR, J.shR, J.elR, J.haR, 1, a + Math.PI]]) {
+      const sw = Math.sin(p);
+      ft.set(x * 0.1, 0.06 + Math.max(0, Math.cos(p)) * 0.2 * s, -sw * 0.36 * s); ik(kn, hip, ft, 0.88, _gb.set(0, 0, -1));
+      sh.set(x * 0.19, 0.02, 0).add(J.chest);
+      ha.set(x * 0.04, -0.55 + 0.25 * s, sw * 0.3 * s - 0.1 * s).add(sh); ik(el, sh, ha, 0.6, _gb.set(0, -0.2, 1));
+    }
+    J.headP.set(0, 0.22, -0.03).add(J.chest);
+  } else if (kind === 'sit') {
+    J.pel.set(0, 0.1, 0.05); J.chest.set(0, 0.56, 0.1); J.hipL.set(-0.1, 0.08, 0.05); J.hipR.set(0.1, 0.08, 0.05);
+    J.knL.set(-0.12, 0.14, -0.36); J.knR.set(0.12, 0.14, -0.36); J.ftL.set(-0.13, -0.3, -0.44); J.ftR.set(0.13, -0.3, -0.44);
+    J.shL.set(-0.19, 0.02, 0).add(J.chest); J.shR.set(0.19, 0.02, 0).add(J.chest);
+    J.haL.set(-0.12, 0.27, -0.44); J.haR.set(0.12, 0.27, -0.44);
+    ik(J.elL, J.shL, J.haL, 0.6, _gb.set(-1, -1, 0)); ik(J.elR, J.shR, J.haR, 0.6, _gb.set(1, -1, 0));
+    J.headP.set(0, 0.21, -0.02).add(J.chest);
+  } else { // celebrate (or not)
+    J.pel.set(0, 0.95, 0); J.chest.set(0, 1.38, 0); J.hipL.set(-0.1, 0.93, 0); J.hipR.set(0.1, 0.93, 0); J.ftL.set(-0.13, 0.06, 0); J.ftR.set(0.13, 0.06, 0);
+    ik(J.knL, J.hipL, J.ftL, 0.88, _gb.set(0, 0, -1)); ik(J.knR, J.hipR, J.ftR, 0.88, _gb.set(0, 0, -1));
+    J.shL.set(-0.19, 0.03, 0).add(J.chest); J.shR.set(0.19, 0.03, 0).add(J.chest);
+    const w = Math.sin(b * 11);
+    if (a === 'good') { J.haL.set(-0.36, 2.02 + w * 0.04, -0.06); J.haR.set(0.36, 2.02 - w * 0.04, -0.06); }
+    else if (a === 'par') { J.haL.set(-0.24, 0.85, 0); J.haR.set(0.24, 1.22 + 0.32 * Math.max(0, Math.sin(b * 9)), -0.26); }
+    else { J.haL.set(-0.1, 1.74, 0.07); J.haR.set(0.1, 1.74, 0.07); O.hp = -0.35; O.hy = Math.sin(b * 6) * 0.25; }
+    ik(J.elL, J.shL, J.haL, 0.6, _gb.set(-1, 0.2, 0.3)); ik(J.elR, J.shR, J.haR, 0.6, _gb.set(1, a === 'par' ? -1 : 0.2, 0.3));
+    J.headP.set(0, 0.22, 0).add(J.chest);
+  }
+  const U = g.userData.U;
+  segTo(U.thL, J.hipL, J.knL); segTo(U.thR, J.hipR, J.knR); segTo(U.sbL, J.knL, J.ftL); segTo(U.sbR, J.knR, J.ftR);
+  U.knL.position.copy(J.knL); U.knR.position.copy(J.knR);
+  U.ftL.position.set(J.ftL.x, J.ftL.y - 0.02, J.ftL.z - 0.05); U.ftL.rotation.set(O.fpL, 0, 0);
+  U.ftR.position.set(J.ftR.x, J.ftR.y - 0.02, J.ftR.z - 0.05); U.ftR.rotation.set(O.fpR, 0, 0);
+  U.pel.position.copy(J.pel); U.pel.rotation.set(0, O.ptw, 0);
+  U.belt.position.set(J.pel.x, J.pel.y + 0.1, J.pel.z); U.belt.rotation.set(0, O.ptw, 0);
+  _m1.set(J.pel.x, J.pel.y + 0.08, J.pel.z); segTo(U.torso, J.chest, _m1, 1, 0.72, O.tw);
+  U.collar.position.set(J.chest.x, J.chest.y + 0.015, J.chest.z); U.collar.rotation.set(Math.PI / 2, 0, -O.tw);
+  U.soL.position.copy(J.shL); U.soR.position.copy(J.shR);
+  segTo(U.upL, J.shL, J.elL); segTo(U.foL, J.elL, J.haL); segTo(U.upR, J.shR, J.elR); segTo(U.foR, J.elR, J.haR);
+  U.elL.position.copy(J.elL); U.elR.position.copy(J.elR); U.haL.position.copy(J.haL); U.haR.position.copy(J.haR);
+  _m1.copy(J.chest); _m1.y += 0.02; _m2.copy(J.headP); _m2.y -= 0.1; segTo(U.neck, _m2, _m1);
+  U.head.position.copy(J.headP); U.head.rotation.set(O.hp, O.hy + O.tw * 0.3, 0);
+  U.club.visible = O.club;
+  if (O.club) { U.club.position.copy(J.tip); U.club.quaternion.setFromUnitVectors(UPV, _sv.subVectors(J.hand, J.tip).normalize()); }
+}
+// Another player's swing, from their 'sw' messages and their shot: back, down, through, finish.
+function swingAngle(B, t) {
+  const W = B.sw, idle = Math.sin(t * 0.0021 + B.id) * 0.03; if (!W) return idle;
+  const el = (t - W.t0) / 1000, amp = W.pt ? 0.3 : 1, ez = k => k * k * (3 - 2 * k);
+  if (W.st === 'up') return lerp(W.th0, -1.9 * amp, ez(Math.min(1, el / 0.9)));
+  if (W.st === 'down') { const dur = Math.max(0.4, W.p / Math.min(1.125, Math.max(W.p, 0.08) / 0.5)), k = Math.min(1, el / dur); return lerp(W.th0, -0.35 * amp, k * k); }
+  if (W.st === 'thru') {
+    if (el < 0.08) return lerp(W.th0, 0, el / 0.08);
+    if (el < 0.65) return 2.1 * amp * (1 - Math.pow(1 - (el - 0.08) / 0.57, 3));
+    if (el < 1.9) return 2.1 * amp;
+    if (el < 2.4) return lerp(2.1 * amp, idle, ez((el - 1.9) / 0.5));
+  } else if (el < 0.35) return lerp(W.th0, idle, ez(el / 0.35)); // called off
+  B.sw = null; return idle;
 }
 function getBall(id) {
   let B = BALLS.get(id); if (B) return B;
   const info = S && S.pl.find(p => p.id === id), slot = info ? info.slot : 0, color = PCOL[slot] || '#fff';
   const mat = new THREE.MeshPhongMaterial({ color: new THREE.Color(color).lerp(new THREE.Color(0xffffff), id === ME.id ? 1 : 0.55), emissive: 0x1c1c1c, specular: 0x888888, shininess: 90 });
   const ball = new THREE.Mesh(ballGeo, mat), shadow = new THREE.Mesh(shadowGeo, shadowMat); ball.castShadow = true;
-  const tg = new THREE.BufferGeometry(); tg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3 * 1500), 3)); tg.setDrawRange(0, 0);
-  const trail = new THREE.Line(tg, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.85 })); trail.frustumCulled = false;
-  const avatar = id === ME.id ? null : buildAvatar(color);
+  const tg = new THREE.BufferGeometry();
+  tg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRACE_N * 6), 3)); tg.setAttribute('tang', new THREE.BufferAttribute(new Float32Array(TRACE_N * 6), 3));
+  tg.setAttribute('side', traceSide); tg.setIndex(traceIdx); tg.setDrawRange(0, 0);
+  const trail = new THREE.Mesh(tg, traceMat(color)); trail.frustumCulled = false;
+  const avatar = id === ME.id ? null : buildGolfer(color);
   const cart = buildCart(color); cart.visible = false;
-  let seat = null; if (id !== ME.id) { seat = buildAvatar(color); seat.scale.setScalar(0.85); seat.position.set(-0.3, 0.32, 0.22); seat.visible = false; cart.userData.body.add(seat); }
+  let seat = null; if (id !== ME.id) { seat = buildGolfer(color); poseGolfer(seat, 'sit'); seat.position.set(-0.3, 0.74, 0.36); seat.visible = false; cart.userData.body.add(seat); }
   B = { id, slot, color, ball, shadow, trail, avatar, cart, seat, anim: null, rest: null, yaw: 0, driving: false, ct: null, cp: null, flatT: 0, flatDir: [0, 0] };
   scene.add(ball, shadow, trail, cart); if (avatar) scene.add(avatar);
   BALLS.set(id, B); return B;
@@ -772,21 +951,48 @@ const FUN = { st: 'offer', t0: 0 }; // the tee-box funnel: offer | hold | declin
 const cartIn = { gas: false, brake: false, left: false, right: false };
 function buildCart(color) {
   const g = new THREE.Group(), body = new THREE.Group(); g.add(body); g.rotation.order = 'YXZ';
-  const M = c => new THREE.MeshLambertMaterial({ color: c });
-  const white = M(0xf1f1ea), col = M(color), dark = M(0x26282c), tire = M(0x161616), metal = M(0xb8bec6);
-  const box = (w, h, d, m, x, y, z) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); body.add(b); return b; };
-  box(1.25, 0.32, 2.3, white, 0, 0.42, 0);
-  box(1.22, 0.34, 0.7, col, 0, 0.72, -0.82);
-  box(1.1, 0.12, 0.6, dark, 0, 0.8, 0.25);
-  box(1.1, 0.5, 0.1, dark, 0, 1.08, 0.56);
-  box(1.36, 0.06, 1.95, col, 0, 2.0, 0.05);
-  for (const [x, z] of [[-0.6, -0.55], [0.6, -0.55], [-0.6, 0.62], [0.6, 0.62]]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.25, 6), metal); p.position.set(x, 1.38, z); body.add(p); }
-  for (const [x, z] of [[-0.64, -0.75], [0.64, -0.75], [-0.64, 0.78], [0.64, 0.78]]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.23, 0.23, 0.18, 12), tire); w.rotation.z = Math.PI / 2; w.position.set(x, 0.23, z); body.add(w); }
-  const sw = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.022, 6, 18), dark); sw.position.set(-0.3, 1.06, -0.32); sw.rotation.x = -1.0; body.add(sw);
-  const col2 = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.45, 5), dark); col2.position.set(-0.3, 0.88, -0.44); col2.rotation.x = 0.55; body.add(col2);
-  const bag = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.14, 0.85, 10), col); bag.position.set(0.25, 0.95, 0.98); bag.rotation.x = -0.25; body.add(bag);
-  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
-  g.userData.body = body; return g;
+  const L = c => new THREE.MeshLambertMaterial({ color: c }), Ph = (c, s) => new THREE.MeshPhongMaterial({ color: c, specular: 0x555555, shininess: s });
+  const white = Ph(0xf3f3ee, 50), col = Ph(color, 60), dark = L(0x26282c), tire = L(0x141414), metal = Ph(0xc4cad2, 90), seatM = Ph(0x3a332d, 20);
+  const glass = new THREE.MeshPhongMaterial({ color: 0xd8ecff, transparent: true, opacity: 0.18, specular: 0xffffff, shininess: 120, depthWrite: false });
+  const lamp = new THREE.MeshBasicMaterial({ color: 0xfff4d6 });
+  const add = (geo, m, x, y, z, rx = 0, ry = 0, rz = 0) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.rotation.set(rx, ry, rz); o.castShadow = m !== glass; body.add(o); return o; };
+  const box = (w, h, d, m, x, y, z, rx) => add(new THREE.BoxGeometry(w, h, d), m, x, y, z, rx);
+  const rod = (a, b, r, m) => { const o = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 1, 8), m); segTo(o, new THREE.Vector3(...a), new THREE.Vector3(...b)); o.castShadow = true; body.add(o); return o; };
+  // chassis, rear body and a rounded nose in the player's color
+  box(1.18, 0.12, 2.2, dark, 0, 0.3, 0.05);
+  box(1.24, 0.34, 1.0, white, 0, 0.55, 0.62);
+  box(1.24, 0.5, 0.42, col, 0, 0.58, -0.38);
+  add(new THREE.CylinderGeometry(0.62, 0.62, 0.5, 24, 1, false, Math.PI / 2, Math.PI), col, 0, 0.58, -0.59).scale.set(1, 1, 0.72);
+  box(1.3, 0.1, 0.12, dark, 0, 0.36, -1.06); box(1.3, 0.1, 0.12, dark, 0, 0.36, 1.14); // bumpers
+  for (const x of [-0.36, 0.36]) add(new THREE.CircleGeometry(0.07, 16), lamp, x, 0.66, -0.975, 0, Math.PI, 0);
+  box(1.1, 0.04, 0.62, dark, 0, 0.4, -0.25); // floor
+  box(1.14, 0.1, 0.16, dark, 0, 0.88, -0.47); // dash
+  // bench seat
+  box(1.1, 0.14, 0.5, seatM, 0, 0.75, 0.34); box(1.1, 0.44, 0.1, seatM, 0, 1.05, 0.62, -0.12);
+  // roof on four posts, windshield, steering wheel
+  for (const x of [-0.58, 0.58]) { rod([x, 0.88, -0.45], [x, 1.96, -0.32], 0.028, metal); rod([x, 0.7, 0.9], [x, 1.96, 0.9], 0.028, metal); }
+  box(1.4, 0.07, 1.62, white, 0, 2.0, 0.3); box(1.44, 0.05, 1.66, col, 0, 1.955, 0.3);
+  box(1.12, 1.02, 0.015, glass, 0, 1.43, -0.39, 0.12);
+  rod([-0.3, 0.78, -0.42], [-0.3, 0.98, -0.16], 0.02, dark);
+  add(new THREE.TorusGeometry(0.16, 0.022, 8, 22), dark, -0.3, 1.0, -0.13, -1.05);
+  // golf bag behind the seat
+  box(0.9, 0.06, 0.42, dark, 0, 0.74, 1.12);
+  add(new THREE.CylinderGeometry(0.16, 0.14, 0.85, 14), col, 0.22, 1.14, 1.14, -0.22);
+  for (const [dx, dz] of [[-0.05, -0.04], [0.05, -0.02], [0, 0.05]]) { rod([0.22 + dx, 1.4, 1.08 + dz], [0.22 + dx * 1.5, 1.72, 1.02 + dz], 0.008, metal); add(new THREE.BoxGeometry(0.05, 0.035, 0.09), metal, 0.22 + dx * 1.5, 1.74, 1.0 + dz); }
+  // wheels: they spin with the cart's speed and the front pair steers
+  const tireG = new THREE.CylinderGeometry(0.23, 0.23, 0.17, 20), hubG = new THREE.CylinderGeometry(0.13, 0.13, 0.02, 16), spokeG = new THREE.BoxGeometry(0.02, 0.22, 0.04), wheels = [];
+  for (const [x, z, front] of [[-0.64, -0.72, true], [0.64, -0.72, true], [-0.64, 0.8, false], [0.64, 0.8, false]]) {
+    const steer = new THREE.Group(), spin = new THREE.Group(); steer.position.set(x, 0.23, z); body.add(steer); steer.add(spin);
+    const tm = new THREE.Mesh(tireG, tire); tm.rotation.z = Math.PI / 2; tm.castShadow = true; spin.add(tm);
+    const hub = new THREE.Mesh(hubG, metal); hub.rotation.z = Math.PI / 2; hub.position.x = Math.sign(x) * 0.09; spin.add(hub);
+    const sp = new THREE.Mesh(spokeG, dark); sp.position.x = Math.sign(x) * 0.1; spin.add(sp);
+    wheels.push({ steer, spin, front });
+  }
+  g.userData.body = body; g.userData.wheels = wheels; return g;
+}
+// wheels roll with the cart (v in m/s) and the front pair turns with the steering (-1..1)
+function rollWheels(c, v, steer, dt) {
+  for (const w of c.userData.wheels) { w.spin.rotation.x -= v * dt / 0.23; if (w.front) w.steer.rotation.y = lerp(w.steer.rotation.y, -steer * 0.45, 1 - Math.exp(-dt * 10)); }
 }
 function placeCart(c, x, z, yaw) {
   const H = HOLE, dx = Math.sin(yaw), dz = -Math.cos(yaw), rx = Math.cos(yaw), rz = Math.sin(yaw);
@@ -802,11 +1008,13 @@ function teePark(slot) { const ts = teeSpot(HOLE, slot); return parkSpot(ts.x, t
 function updateCart(B, dt, t) {
   const c = B.cart, me = B.id === ME.id;
   if (V.mode === 'intro' || !(me ? P.hasCart : B.hc || B.driving)) { c.visible = false; if (B.seat) B.seat.visible = false; return; }
-  if (me && CART.driving) { placeCart(c, CART.p.x, CART.p.z, CART.yaw); c.visible = true; return; }
+  if (me && CART.driving) { placeCart(c, CART.p.x, CART.p.z, CART.yaw); rollWheels(c, CART.v, CART.steer, dt); c.visible = true; return; }
   if (!me && B.driving && B.ct) {
     const lag = Math.min(0.25, (t - B.ct.at) / 1000), tx = B.ct.x + Math.sin(B.ct.yaw) * B.ct.v * lag, tz = B.ct.z - Math.cos(B.ct.yaw) * B.ct.v * lag;
     if (!B.cp) B.cp = { x: tx, z: tz, yaw: B.ct.yaw };
-    const k = 1 - Math.exp(-dt * 10); B.cp.x = lerp(B.cp.x, tx, k); B.cp.z = lerp(B.cp.z, tz, k); B.cp.yaw = angLerp(B.cp.yaw, B.ct.yaw, k);
+    const k = 1 - Math.exp(-dt * 10), y0 = B.cp.yaw; B.cp.x = lerp(B.cp.x, tx, k); B.cp.z = lerp(B.cp.z, tz, k); B.cp.yaw = angLerp(B.cp.yaw, B.ct.yaw, k);
+    const turn = Math.atan2(Math.sin(B.cp.yaw - y0), Math.cos(B.cp.yaw - y0)) / Math.max(dt, 1e-3);
+    rollWheels(c, B.ct.v, clamp(turn / 1.5 / Math.max(0.3, clamp(Math.abs(B.ct.v) / 5, 0, 1)), -1, 1) * Math.sign(B.ct.v || 1), dt);
     placeCart(c, B.cp.x, B.cp.z, B.cp.yaw); c.visible = true; B.seat.visible = true; return;
   }
   if (B.seat) B.seat.visible = false; B.cp = null;
@@ -958,26 +1166,47 @@ function driveCart(dt, t) {
   CART.dry = { x: CART.p.x, z: CART.p.z };
   sendPose(false);
 }
-function resetBallVisual(B) { B.anim = null; B.trail.geometry.setDrawRange(0, 0); }
+function resetBallVisual(B) { B.anim = null; B.trail.geometry.setDrawRange(0, 0); B.hs = null; }
+// point j of a tracer (both of its vertices)
+function tracePoint(B, j, x, y, z) { const a = B.trail.geometry.attributes.position.array, o = j * 6; a[o] = a[o + 3] = x; a[o + 1] = a[o + 4] = y; a[o + 2] = a[o + 5] = z; }
 function placeBall(B, x, y, z) {
   B.ball.position.set(x, y, z);
   if (HOLE) { const gy = groundY(HOLE, x, z), h = Math.max(0, y - gy); B.shadow.position.set(x, gy + 0.012, z); const k = 1 + h * 0.08; B.shadow.scale.set(k, 1, k); B.shadow.material.opacity = 0.35 / k; }
 }
 // Starts playing back a simulated shot for ball B.
 function playShot(B, pts, dt, ev, origin) {
-  B.anim = { pts, dt, ev: ev || [], ei: 0, t0: now(), dur: (pts.length / 3 - 1) * dt, speed: 1, done: false, origin };
-  const arr = B.trail.geometry.attributes.position.array, n = Math.min(pts.length / 3, 1500);
-  for (let i = 0; i < n * 3; i++) arr[i] = pts[i];
-  B.trail.geometry.attributes.position.needsUpdate = true; B.trail.geometry.setDrawRange(0, 0); B.trail.geometry.computeBoundingSphere();
+  const n = Math.min(pts.length / 3, TRACE_N), g = B.trail.geometry, ta = g.attributes.tang.array, tp = new Float32Array(n * 3);
+  B.anim = { pts, dt, ev: ev || [], ei: 0, t0: now(), dur: (pts.length / 3 - 1) * dt, speed: 1, done: false, origin, n, tp };
+  // the tracer: lifted a little where the ball rolls, so it doesn't sink into the grass
+  let top = 0;
+  for (let i = 0; i < n; i++) {
+    const x = pts[i * 3], y = pts[i * 3 + 1], z = pts[i * 3 + 2], h = HOLE ? y - groundY(HOLE, x, z) : 1; top = Math.max(top, h);
+    tp[i * 3] = x; tp[i * 3 + 1] = y + (h < 0.3 ? 0.05 : 0); tp[i * 3 + 2] = z; tracePoint(B, i, x, tp[i * 3 + 1], z);
+  }
+  let tx = 0, ty = 0, tz = 1;
+  for (let i = 0; i < n; i++) {
+    const a = Math.max(0, i - 1) * 3, b = Math.min(n - 1, i + 1) * 3, dx = tp[b] - tp[a], dy = tp[b + 1] - tp[a + 1], dz = tp[b + 2] - tp[a + 2];
+    if (dx * dx + dy * dy + dz * dz > 1e-8) { tx = dx; ty = dy; tz = dz; }
+    const o = i * 6; ta[o] = ta[o + 3] = tx; ta[o + 1] = ta[o + 4] = ty; ta[o + 2] = ta[o + 5] = tz;
+  }
+  g.attributes.position.needsUpdate = g.attributes.tang.needsUpdate = true; g.setDrawRange(0, 0);
+  B.hs = null; B.ground = top < 0.6; // putts and other rollers get a fainter, thinner line
 }
 function animBall(B, t) {
   const A = B.anim; if (!A || A.done) return;
-  const el = (t - A.t0) / 1000 * A.speed;
+  const el = Math.max(0, (t - A.t0) / 1000 * A.speed); // a friend's ball waits a moment for their club to arrive
   const f = el / A.dt, n = A.pts.length / 3, i = Math.min(n - 1, Math.floor(f)), k = Math.min(1, f - i), j = Math.min(n - 1, i + 1), p = A.pts;
   placeBall(B, lerp(p[i * 3], p[j * 3], k), lerp(p[i * 3 + 1], p[j * 3 + 1], k), lerp(p[i * 3 + 2], p[j * 3 + 2], k));
-  B.trail.geometry.setDrawRange(0, Math.min(1500, i + 1));
+  // the tracer runs up to the ball: put back last frame's head point, then pin the new head to the ball
+  const g = B.trail.geometry, hd = Math.min(A.n - 1, i + 1), q = B.ball.position;
+  if (B.hs != null && B.hs < A.n) tracePoint(B, B.hs, A.tp[B.hs * 3], A.tp[B.hs * 3 + 1], A.tp[B.hs * 3 + 2]);
+  if (hd > i) { tracePoint(B, hd, q.x, q.y + (A.tp[hd * 3 + 1] - p[hd * 3 + 1]), q.z); B.hs = hd; } else B.hs = null;
+  g.attributes.position.needsUpdate = true; g.setDrawRange(0, hd * 6);
   while (A.ei < A.ev.length && A.ev[A.ei][0] <= el) { if (B.id === ME.id || B.id === V.spec) playEvent(A.ev[A.ei][1], B); A.ei++; }
-  if (el >= A.dur) { A.done = true; placeBall(B, p[(n - 1) * 3], p[(n - 1) * 3 + 1], p[(n - 1) * 3 + 2]); }
+  if (el >= A.dur) {
+    A.done = true; A.doneAt = t; placeBall(B, p[(n - 1) * 3], p[(n - 1) * 3 + 1], p[(n - 1) * 3 + 2]);
+    if (B.hs != null) tracePoint(B, B.hs, A.tp[B.hs * 3], A.tp[B.hs * 3 + 1], A.tp[B.hs * 3 + 2]); B.hs = null; g.setDrawRange(0, (A.n - 1) * 6);
+  }
 }
 function playEvent(e) { if (e === 'land' || e === 'sand') SFX.land(); else if (e === 'splash') SFX.splash(); else if (e === 'tree') SFX.tree(); else if (e === 'cup') SFX.cup(); else if (e === 'lip') SFX.lip(); }
 
@@ -1025,7 +1254,7 @@ const MT = { st: 'idle', x: 0, disp: 0, pow: 0, acc: 0, t: 0, swingA: 0, follow:
 const myPar = () => HOLE ? HOLE.par : 4;
 const playerColor = id => { const p = S && S.pl.find(q => q.id === id); return p ? PCOL[p.slot] : '#fff'; };
 const playerName = id => { const p = S && S.pl.find(q => q.id === id); return p ? p.n : 'Player'; };
-function teeSpot(H, slot) { const c = Math.cos(H.teeA), s = Math.sin(H.teeA), u = (slot - 1.5) * 2.4; return { x: u * c, z: u * s }; }
+function teeSpot(H, slot) { const c = Math.cos(H.teeA), s = Math.sin(H.teeA), u = (slot - 1.5) * 3.2; return { x: u * c, z: u * s }; } // wide enough that friends' golfers don't crowd your view
 function distToPin(x, z) { return Math.hypot(HOLE.cup.x - x, HOLE.cup.z - z); }
 function yawTo(x0, z0, x1, z1) { return Math.atan2(x1 - x0, -(z1 - z0)); }
 function lieMult(ci, lie) { if (CLUBS[ci].putt) return 1; if (lie === 'sand') return CLUBS[ci].id === 'SW' ? 0.88 : 0.6; return SURF[lie] ? SURF[lie].lie : 1; }
@@ -1056,7 +1285,7 @@ function startHole(s) {
   const ts = teeSpot(HOLE, ME.slot); P.pos = { x: ts.x, y: groundY(HOLE, ts.x, ts.z) + BR, z: ts.z }; P.prev = { ...P.pos };
   if (CART.driving || RUN.on) endTravel(true);
   P.hasCart = false; CART.park = null; FUN.st = 'offer'; P.atk = 5; for (const A of ATKS) A.dead = true;
-  for (const B of BALLS.values()) { resetBallVisual(B); B.rest = null; B.driving = false; B.running = false; B.ct = null; B.rp = null; B.park = null; B.flatT = 0; }
+  for (const B of BALLS.values()) { resetBallVisual(B); B.rest = null; B.driving = false; B.running = false; B.ct = null; B.rp = null; B.park = null; B.flatT = 0; B.sw = null; B.celeb = null; }
   P.club = autoClub(); P.yaw = autoAim(); V.look = 0;
   MT.st = 'idle'; MT.follow = 0; MT.swingA = 0;
   V.mode = 'intro'; V.t0 = now(); V.spec = 0;
@@ -1086,10 +1315,12 @@ function swingPress() {
   if (V.mode === 'atk') { audio(); if (MT.st === 'idle') { MT.st = 'up'; MT.x = 0; MT.dir = 1; MT.t = 0; MT.pow = 0; MT.msg = ''; } else if (MT.st === 'up') hitAtk(); return; }
   if (V.mode !== 'aim') { if (V.mode === 'intro') beginAim(); return; }
   audio();
-  if (MT.st === 'idle') { MT.st = 'up'; MT.x = 0; MT.dir = 1; MT.t = 0; MT.pow = 0; MT.msg = ''; }
-  else if (MT.st === 'up') { MT.pow = clamp(MT.disp, 0.02, 1); MT.st = 'down'; SFX.whoosh(); }
+  if (MT.st === 'idle') { MT.st = 'up'; MT.x = 0; MT.dir = 1; MT.t = 0; MT.pow = 0; MT.msg = ''; swingSig('up'); }
+  else if (MT.st === 'up') { MT.pow = clamp(MT.disp, 0.02, 1); MT.st = 'down'; SFX.whoosh(); swingSig('down'); }
   else if (MT.st === 'down') { MT.acc = MT.disp; takeShot(); }
 }
+// tell the others where your swing is, so your golfer swings on their screens
+const swingSig = s => toHost({ t: 'sw', s, p: +MT.pow.toFixed(2), pt: CLUBS[P.club].putt ? 1 : 0 });
 function updateMeter(dt) {
   if (MT.st !== 'up' && MT.st !== 'down') return;
   const b = drunk(), T = tolOf(SET.tol), sp = 1 + Math.min(T.spMax, T.sp * b); MT.t += dt;
@@ -1105,7 +1336,7 @@ function updateMeter(dt) {
   const jit = (Math.sin(MT.t * 13.1) * 0.6 + Math.sin(MT.t * 7.3 + 1) * 0.4) * Math.min(T.jitMax, T.jit * b);
   MT.disp = clamp(MT.x + jit, METER_MIN, 1);
   // missed the white line entirely: call the swing off instead of hitting it for you
-  if (MT.st === 'down' && MT.x <= METER_MIN) { MT.st = 'idle'; MT.swingA = 0; MT.msg = 'Too late! Swing again'; MT.msgT = now(); SFX.tick(); }
+  if (MT.st === 'down' && MT.x <= METER_MIN) { MT.st = 'idle'; MT.swingA = 0; MT.msg = 'Too late! Swing again'; MT.msgT = now(); SFX.tick(); swingSig('idle'); }
 }
 function swayYaw(t, putt) { const b = drunk(); return b * 0.009 * (putt ? 0.5 : 1) * (Math.sin(t * 0.00083) * 0.65 + Math.sin(t * 0.00191 + 1.3) * 0.35); }
 function takeShot() {
@@ -1348,6 +1579,7 @@ function updateAimGuides(t) {
 }
 function updateGame(dt, t) {
   const H = HOLE;
+  traceW = 6 * 2 * Math.tan(camera.fov * D2R / 2) / Math.max(1, innerHeight); // tracer half-width: about 6 px
   // own swing rig
   const putt = CLUBS[P.club].putt;
   const atk = V.mode === 'atk', CR = showClub(atk ? 3 : P.club);
@@ -1370,16 +1602,28 @@ function updateGame(dt, t) {
     const holed = B.id === ME.id ? P.done && !(B.anim && !B.anim.done) : B.dn && !(B.anim && !B.anim.done);
     const has = B.id === ME.id ? !!P.pos : !!(B.rest || (B.anim && !B.anim.done));
     B.ball.visible = has && !holed && V.mode !== 'intro'; B.shadow.visible = B.ball.visible;
-    B.trail.visible = !!B.anim && V.mode !== 'intro';
+    // tracers stay up for a few seconds after the ball stops, then fade
+    const A = B.anim, fade = !A ? 0 : !A.done ? 1 : 1 - clamp((t - A.doneAt - 4000) / 1500, 0, 1);
+    B.trail.visible = fade > 0 && V.mode !== 'intro';
+    if (B.trail.visible) { const u = B.trail.material.uniforms; u.alpha.value = fade * (B.ground ? 0.5 : 1); u.px.value = traceW * (B.ground ? 0.45 : 1); }
     if (B.avatar) {
       if ((B.driving || B.running) && B.ct && t - B.ct.at > 3000) { B.driving = B.running = false; B.ct = null; }
       const run = B.running && B.ct ? remotePose(B, dt, t) : null; if (!run) B.rp = null;
-      const st = run || (B.anim && !B.anim.done ? B.anim.origin : B.rest), yw = run ? run.yaw : B.anim && !B.anim.done ? B.anim.origin.yaw : B.yaw;
-      B.standing = !!(st && (run || !B.dn) && !B.driving && V.mode !== 'intro');
+      if (run || B.driving) B.sw = null;
+      const live = B.anim && !B.anim.done ? B.anim.origin : null, st = run || live || B.rest, yw = run ? run.yaw : live ? live.yaw : B.yaw;
+      const cel = B.celeb && t - B.celeb.t0 < 2600 ? B.celeb : null;
+      B.standing = !!(cel || st && (run || !B.dn) && !B.driving && V.mode !== 'intro');
       if (B.standing) {
-        const ax = run ? run.x : st.x - Math.sin(yw) * 0.9, az = run ? run.z : st.z + Math.cos(yw) * 0.9;
-        B.avatar.position.set(ax, groundY(H, ax, az), az); B.avatar.rotation.set(0, -yw, 0);
-        const sw = run ? Math.sin(run.ph) * 0.75 * Math.min(1, Math.abs(B.ct.v) / 3) : 0; B.avatar.userData.legs[0].rotation.x = sw; B.avatar.userData.legs[1].rotation.x = -sw;
+        const av = B.avatar;
+        if (cel) { // holed out: jump for joy, pump a fist, or hold your head
+          const e = (t - cel.t0) / 1000; av.position.set(cel.x, groundY(H, cel.x, cel.z) + (cel.k === 'good' ? Math.abs(Math.sin(e * 5.5)) * 0.28 : 0), cel.z);
+          av.rotation.set(0, cel.ry, 0); poseGolfer(av, 'celeb', cel.k, e);
+        } else if (run) { av.position.set(run.x, groundY(H, run.x, run.z), run.z); av.rotation.set(0, -yw, 0); poseGolfer(av, 'run', run.ph, Math.min(1, Math.abs(B.ct.v) / 4)); }
+        else { // at the ball: stand beside it, side-on to the target, and swing when they do
+          const ax = st.x - Math.sin(yw) * 0.05 - Math.cos(yw) * 0.72, az = st.z + Math.cos(yw) * 0.05 - Math.sin(yw) * 0.72;
+          av.position.set(ax, groundY(H, ax, az), az); av.rotation.set(0, -yw - Math.PI / 2, 0);
+          B.th = swingAngle(B, t); poseGolfer(av, 'addr', B.th, B.sw ? B.sw.pt : B.ground && !!live);
+        }
         const ft = (t - B.flatT) / 1000;
         if (B.flatKind === 'bonk' && ft < 1.6) { // knocked over by an attack ball, then straight back up
           B.avatar.rotation.x = -Math.min(1, ft / 0.25) * Math.PI / 2 * (ft < 1.3 ? 1 : (1.6 - ft) / 0.3); B.avatar.position.y += 0.1;
@@ -1387,7 +1631,7 @@ function updateGame(dt, t) {
           const e = Math.min(ft, 0.9); B.avatar.position.x += B.flatDir[0] * e * 5; B.avatar.position.z += B.flatDir[1] * e * 5;
           if (ft < 0.9) { B.avatar.position.y += 4.4 * ft - 4.9 * ft * ft; B.avatar.rotation.x = -ft * 9; } else { B.avatar.rotation.x = -Math.PI / 2; B.avatar.position.y += 0.15; }
         }
-        B.avatar.visible = V.mode === 'cart' || Math.hypot(B.avatar.position.x - camera.position.x, B.avatar.position.z - camera.position.z) > 2.2;
+        B.avatar.visible = V.mode === 'cart' || Math.hypot(B.avatar.position.x - camera.position.x, B.avatar.position.z - camera.position.z) > 1.2;
       } else B.avatar.visible = false;
     }
     updateCart(B, dt, t);
@@ -1415,6 +1659,7 @@ function updateGame(dt, t) {
   if (V.mode === 'aim') sendAim(false);
 }
 
+let traceW = 0.004;
 // ============================ attack balls ============================
 // Five per hole, in either mode; they never count as strokes. Tap 🎯 to drop one at your feet and
 // line it up with the crosshair, then swing: one tap starts the backswing, the next hits it (the
@@ -2005,6 +2250,7 @@ function hostRecv(id, m) {
       bcast({ t: 'feed', m: m.k === 'shot' ? '🥃 ' + r.n + ' took a shot!' : m.skip ? '⏭ ' + r.n + ' took a sip to skip to their ball' : '🍺 ' + r.n + ' took a sip' }); bcastState(); break;
     }
     case 'bz': r.bz = +m.bz || 0; break;
+    case 'sw': if (HS.phase === 'play') bcastExcept(id, { t: 'sw', id, s: m.s === 'up' || m.s === 'down' ? m.s : 'idle', p: clamp(+m.p || 0, 0, 1), pt: m.pt ? 1 : 0 }); break;
     case 'tol':
       if (!TOL[m.v] || r.tol === m.v) break;
       r.tol = m.v; if (HS.phase === 'play') bcast({ t: 'feed', m: TOL[m.v].e + ' ' + r.n + ' is now a ' + TOL[m.v].n });
@@ -2211,10 +2457,13 @@ function clientRecv(m) {
       if (m.id === ME.id || !HOLE || !S || S.phase !== 'play') break;
       const B = getBall(m.id), o = B.rest || { x: m.pts[0], y: m.pts[1], z: m.pts[2] };
       B.yaw = m.y; playShot(B, m.pts, m.dt, m.ev, { x: m.pts[0], y: m.pts[1], z: m.pts[2], yaw: m.y });
+      // their golfer comes down through the ball, so hold the ball back until the club gets there
+      B.anim.t0 += 80; B.sw = { st: 'thru', t0: now(), th0: B.th != null ? B.th : -0.4, pt: B.sw ? B.sw.pt : B.ground };
       if (V.spec === m.id || camera.position.distanceTo(B.ball.position) < 40) SFX.hit();
       void o; break;
     }
     case 'aim': { const B = BALLS.get(m.id); if (B) B.yaw = m.y; break; }
+    case 'sw': { const B = BALLS.get(m.id); if (B && m.id !== ME.id) B.sw = { st: m.s, t0: now(), th0: B.th || 0, p: +m.p || 0, pt: !!m.pt }; break; }
     case 'prompt': queuePrompt(m.p); break;
     case 'betoff': queuePrompt({ e: '🤝', t: 'Bet?', s: playerName(m.by) + ' bets you a ' + (m.k === 'shot' ? 'shot' : 'sip') + ' they beat you on this hole. Loser drinks; tie, you both do.', c: '', k: m.k, bet: m.id }); SFX.tick(); break;
     case 'betx': dropBetPrompts(m.id); break;
@@ -2229,7 +2478,7 @@ function clientRecv(m) {
       const B = BALLS.get(m.id); if (B) { B.flatT = now(); B.flatKind = 'bonk'; B.flatDir = [m.dx, m.dz]; }
       if (m.id === ME.id) {
         showBanner('BONK! 🎯', 'by ' + playerName(m.by), 1800); V.shakeT = now(); V.shakeA = 0.7; SFX.thud();
-        if ((V.mode === 'aim' || V.mode === 'atk') && (MT.st === 'up' || MT.st === 'down')) { MT.st = 'idle'; MT.msg = 'Interrupted!'; MT.msgT = now(); }
+        if ((V.mode === 'aim' || V.mode === 'atk') && (MT.st === 'up' || MT.st === 'down')) { MT.st = 'idle'; MT.msg = 'Interrupted!'; MT.msgT = now(); if (V.mode === 'aim') swingSig('idle'); }
         if (V.mode === 'run') { RUN.stunUntil = now() + 1200; RUN.tripAt = now(); RUN.v = 0; }
         if (V.mode === 'cart') { CART.v *= 0.2; CART.yaw += (Math.random() - 0.5) * 0.9; }
       } else if (B && B.avatar && B.avatar.position.distanceTo(camera.position) < 60) SFX.thud();
@@ -2271,7 +2520,12 @@ function applyState(s) {
     } else if (s.phase === 'card' && (!prev || prev.phase !== 'card')) { V.mode = 'none'; showCard('hole'); }
     else if (s.phase === 'final' && (!prev || prev.phase !== 'final')) { V.mode = 'none'; P.key = ''; showCard('final'); SFX.cheer(); }
     if (HOLE) for (const p of s.pl) {
-      const B = getBall(p.id); B.dn = p.dn; B.slot = p.slot; B.hc = !!p.hc;
+      const B = getBall(p.id);
+      if (p.dn && !B.dn && s.phase === 'play' && B.avatar && B.avatar.visible && B.standing) { // they just holed out
+        const d = (p.sc[s.hole] || 0) - holePar(s.hole, s.nh);
+        B.celeb = { t0: now(), k: d < 0 ? 'good' : d === 0 ? 'par' : 'bad', x: B.avatar.position.x, z: B.avatar.position.z, ry: B.avatar.rotation.y };
+      }
+      B.dn = p.dn; B.slot = p.slot; B.hc = !!p.hc;
       if (p.id !== ME.id && !B.driving) B.park = p.cp ? { x: p.cp[0], z: p.cp[1], yaw: p.cp[2] } : null;
       if (p.id === ME.id) continue;
       if (p.p) B.rest = { x: p.p[0], y: p.p[1], z: p.p[2] };
@@ -2468,7 +2722,7 @@ function keyAim(dt) {
 addEventListener('blur', () => keys.clear());
 
 // ============================ main loop ============================
-function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); }
+function resize() { renderer.setSize(innerWidth, innerHeight, false); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); postSize(); }
 addEventListener('resize', resize);
 function applyGfx() {
   const q = GFX[SET.gfx] || GFX.high, sh = q.shadow > 0;
@@ -2477,7 +2731,7 @@ function applyGfx() {
   if (renderer.shadowMap.enabled !== sh) { renderer.shadowMap.enabled = sh; scene.traverse(o => { if (o.material) o.material.needsUpdate = true; }); }
   sunL.castShadow = sh;
   if (HOLE && HOLE.grass) HOLE.grass.visible = q.grass;
-  resize();
+  POST.on = !!q.post; resize();
 }
 applyGfx();
 let last = now();
@@ -2491,7 +2745,7 @@ function frame() {
   updateCamera(dt, t);
   sky.position.copy(camera.position); hills.position.set(camera.position.x, 0, camera.position.z);
   updateSun(); waterNormal.offset.set(t * 0.000012, t * 0.000007);
-  renderer.render(scene, camera);
+  render();
   hiccups(t);
   drunkFx(t);
   updateMarkers();
@@ -2503,5 +2757,5 @@ function frame() {
 buildHole((Math.random() * 1e9) | 0, 0, 9);
 requestAnimationFrame(frame);
 // for automated tests
-window.__tipsy = { updateMeter, toHost, applyGfx, SET, scene,  ATK, ATKS, startAtk, hitAtk, stopAtk, getOutOfCart, getInCart, drunk, P, V, MT, BUZZ, CART, RUN, FUN, cartIn, startTravel, endTravel, skipToBall, funnelRelease, S: () => S, HOLE: () => HOLE, NET, HS, simulate, swingPress, drink, CLUBS, buildHole, camera, renderer, BALLS, hiccups, BET, betTargets, contestOf, TOL, prompt: () => curPrompt };
+window.__tipsy = { updateMeter, toHost, applyGfx, SET, scene,  ATK, ATKS, startAtk, hitAtk, stopAtk, getOutOfCart, getInCart, drunk, P, V, MT, BUZZ, CART, RUN, FUN, cartIn, startTravel, endTravel, skipToBall, funnelRelease, S: () => S, HOLE: () => HOLE, NET, HS, simulate, swingPress, drink, CLUBS, buildHole, camera, renderer, BALLS, hiccups, BET, betTargets, contestOf, TOL, prompt: () => curPrompt, POST, poseGolfer };
 })();
